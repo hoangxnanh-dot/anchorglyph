@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/img/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ANCYPH</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas {
+        display: block;
+      }
+
+      /* how wide the library (left) and the control panel (right) are */
+      :root {
+        --panel-width: 300px;
+      }
+
+      /* Every button in both panels and the preview has the same size: this
+         tall, with this much room left and right of its text. The square
+         icon buttons are as wide as they are tall. */
+      :root {
+        --button-height: 28px;
+        --button-padding: 10px;
+      }
+
+      /* the control panel: the whole height of the window, flush with the
+         right edge. The sketch centres the grid between it and the library. */
+      .lil-gui.lil-root.lil-auto-place {
+        top: 0;
+        right: 0;
+        height: 100%;
+        /* lil-gui reads its width from --width */
+        --width: var(--panel-width);
+      }
+
+      /* the size of the text in the control panel. Every folder sets its
+         own sizes, so this has to apply to all of them, not only the panel. */
+      .lil-gui {
+        --font-size: 14px;
+        --input-font-size: 14px;
+        /* the height of each row, raised with the text so it still fits */
+        --widget-height: 24px;
+      }
+
+      /* the buttons in the control panel (Reconnect, Clear, the switches,
+         the Style field…), sized like all the others. Side by side, each
+         takes the room its text needs, so a long word like "Animation"
+         isn't cut off. */
+      .lil-gui .lil-controller button {
+        height: var(--button-height);
+        padding: 0 var(--button-padding);
+        width: auto;
+        flex: 1 1 auto;
+      }
+
+      /* the bold font for the folder titles, straight from the fonts folder */
+      @font-face {
+        font-family: 'SpaceGrotesk-Bold';
+        src: url('/fonts/SpaceGrotesk-Bold.otf');
+        font-weight: 700;
+      }
+
+      /* the titles: Controls and Library at the top of the two panels, and
+         the folders (Modes, Grid, Anchors…) */
+      .lil-gui > .lil-title,
+      .library-title {
+        font-family: 'SpaceGrotesk-Bold', sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        /* 0.5px wider than the rest of the text */
+        letter-spacing: 1px;
+      }
+      /* taller, so the bigger text fits */
+      .lil-gui > .lil-title {
+        --title-height: 36px;
+      }
+      /* Controls and Library, the headlines of the two panels, are a bit
+         bigger than the folder titles */
+      .lil-gui.lil-root > .lil-title,
+      .library-title {
+        font-size: 22px;
+      }
+      /* Controls is only a headline: clicking it doesn't fold the panel
+         away, and it has no arrow in front */
+      .lil-gui.lil-root > .lil-title {
+        pointer-events: none;
+      }
+      .lil-gui.lil-root > .lil-title::before {
+        content: none;
+      }
+
+      /* a folder's title keeps the line above it, which separates the
+         folders, but loses the one below it, between title and controls */
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
+        border-bottom-color: transparent;
+      }
+      /* a little more room at the end of each folder, before the next one */
+      .lil-gui.lil-root > .lil-children > .lil-gui {
+        padding-bottom: 2px;
+      }
+
+      /* the tracking (space between letters) of every text in both panels
+         and the library's preview. Buttons and text fields don't pass it on
+         by themselves, so they are told to take it over. */
+      .lil-gui,
+      .library,
+      .library-preview {
+        letter-spacing: 0.5px;
+      }
+      .lil-gui :is(button, input, select, textarea),
+      .library :is(button, input, select, textarea),
+      .library-preview :is(button, input, select, textarea) {
+        letter-spacing: inherit;
+      }
+
+      /* the library, on the left. Its colors and sizes match the control
+         panel, and the outline of the loaded variation uses the accent color. */
+      .library {
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1001;
+        width: var(--panel-width);
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: #1f1f1f;
+        color: #ebebeb;
+        font-family: panel-font, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 14px;
+      }
+      .library[hidden] {
+        display: none;
+      }
+      /* without this, the rows of buttons below would still show when the
+         library hides them */
+      .library [hidden] {
+        display: none;
+      }
+      .library-title {
+        padding: 6px 8px;
+        /* with the padding, as tall as the Controls title */
+        line-height: 24px;
+        background: #111111;
+      }
+      .library button,
+      .library-preview button {
+        height: var(--button-height);
+        padding: 0 var(--button-padding);
+      }
+      /* the name field above each card */
+      .library input {
+        height: 20px;
+      }
+      .library button,
+      .library input,
+      .library-preview button {
+        border: none;
+        border-radius: 2px;
+        background: #424242;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .library button:hover,
+      .library-preview button:hover {
+        background: #4f4f4f;
+      }
+      /* the buttons for selected variations, while none is selected */
+      .library button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .library button:disabled:hover {
+        background: #424242;
+      }
+      .library-save {
+        margin: 8px;
+      }
+      .library-selection-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 0 8px 8px;
+      }
+      .library-selection-actions button {
+        flex: 1;
+      }
+      .library-empty {
+        padding: 0 8px;
+        line-height: 1.4;
+        /* a \n in the text starts a new line */
+        white-space: pre-line;
+        opacity: 0.6;
+      }
+      .library-list {
+        flex: 1;
+        overflow-y: auto;
+        list-style: none;
+        padding: 0 8px 8px;
+      }
+      .library-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 12px;
+      }
+      /* the picture, with the checkbox and the selection layer on top */
+      .library-thumbnail {
+        position: relative;
+      }
+      .library-thumbnail img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        /* a slanted grid makes a wider picture; it is shown whole */
+        object-fit: contain;
+        outline: 1px solid #424242;
+        cursor: zoom-in;
+      }
+      .library-item.is-active img {
+        outline: 2px solid var(--accent-color, #39ff14);
+      }
+      .library-selection-mask {
+        position: absolute;
+        inset: 0;
+        background: var(--accent-color, #39ff14);
+        opacity: 0;
+        /* clicks go through to the picture below */
+        pointer-events: none;
+      }
+      .library-item.is-selected .library-selection-mask {
+        opacity: 0.25;
+      }
+      .library-item .library-selection-checkbox {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        width: 14px;
+        height: 14px;
+        padding: 0;
+        cursor: pointer;
+        accent-color: var(--accent-color, #39ff14);
+      }
+      .library-item input {
+        padding: 0 4px;
+        background: transparent;
+        cursor: text;
+      }
+      .library-item input:focus {
+        background: #424242;
+        outline: none;
+      }
+      /* Delete (x) and Load (arrow) on the picture's right corners, dark
+         enough to stand out on any drawing */
+      .library .library-icon-button {
+        position: absolute;
+        right: 6px;
+        width: var(--button-height);
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(31, 31, 31, 0.8);
+      }
+      .library .library-icon-button:hover {
+        background: #4f4f4f;
+      }
+      .library-delete {
+        top: 6px;
+      }
+      .library-load {
+        bottom: 6px;
+      }
+
+      /* the flash when saving: the accent color over the whole window, below
+         the two panels. It is invisible until src/lib/library.js fades it in
+         and out. White until the sketch has set the accent color. */
+      .library-flash {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: var(--accent-color, #ffffff);
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* the large preview of a saved variation, over the whole window */
+      .library-preview {
+        position: fixed;
+        inset: 0;
+        z-index: 1002;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #ebebeb;
+        font-family: panel-font, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 14px;
+      }
+      .library-preview[hidden] {
+        display: none;
+      }
+      .library-preview-content {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+        background: #1f1f1f;
+      }
+      .library-preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      /* Close: a square x, like Delete on the cards */
+      .library-preview-header .library-icon-button {
+        width: var(--button-height);
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* the picture and the guide layers on top of it */
+      .library-preview-stage {
+        position: relative;
+      }
+      /* the grid and the anchors, exactly over the picture. Clicks go
+         through them. */
+      .library-preview-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+      }
+      .library-preview-layer[hidden] {
+        display: none;
+      }
+      /* Grid, Anchors, PNG and SVG on the picture's bottom right corner, as
+         far in from the edges as the icons on the cards, and dark enough to
+         stand out on any drawing. All four have the same padding. */
+      .library-preview-footer {
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        display: flex;
+        gap: 4px;
+      }
+      .library-preview-footer button {
+        padding: 0 var(--button-padding);
+        background: rgba(31, 31, 31, 0.8);
+      }
+      /* a guide that is showing: its button lit up in the accent color */
+      .library-preview-footer button.is-on {
+        background: var(--accent-color, #39ff14);
+        color: #1f1f1f;
+      }
+      /* as large as fits in the window, leaving room for the name above */
+      .library-preview-image {
+        display: block;
+        width: min(calc(100vw - 64px), calc(100vh - 100px));
+        aspect-ratio: 1;
+        object-fit: contain;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/sketch.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+# installed by npm install; can always be installed again
+node_modules/
+# made by npm run build
+dist/
+# hidden files macOS adds on its own (and on external drives)
+.DS_Store
+._*
+# a downloaded reference project, not used by the sketch
+fifteen-lines-master/
