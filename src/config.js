@@ -6,10 +6,11 @@
 // Colors are written as r, g, b, each one a number from 0 to 255.
 
 // The name your exported images get — no spaces, no slashes.
-export const screenshotName = 'Ancyph';
+export const screenshotName = 'Anchorglyph';
 
-// The title at the top of the middle, above the grid.
-export const projectTitle = 'Iteration';
+// The project's name: the big headline across the top of the window,
+// above the Library, Iteration and Modes titles.
+export const projectTitle = 'Ancyph';
 
 // The font for 'Glyph' mode: a file in the fonts folder, written without its
 // extension. Leave it as '' to use whichever font comes first alphabetically.

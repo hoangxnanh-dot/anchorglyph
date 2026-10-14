@@ -53,6 +53,15 @@
         /* the room the folder arrows (▾ ▸) take in front of their titles,
            including the space between arrow and text */
         --arrow-width: 24px;
+        /* how tall the project title across the top of the window is. The
+           library, the control panel and the title above the grid start
+           below it. */
+        --project-title-height: 72px;
+      }
+      /* the g key hides the project title with the panels: then nothing
+         needs to make room for it */
+      body.without-project-title {
+        --project-title-height: 0px;
       }
 
       /* Every button in both panels and the preview has the same size: this
@@ -66,9 +75,9 @@
       /* the control panel: the whole height of the window, flush with the
          right edge. The sketch centres the grid between it and the library. */
       .lil-gui.lil-root.lil-auto-place {
-        top: 0;
+        top: var(--project-title-height);
         right: 0;
-        height: 100%;
+        height: calc(100% - var(--project-title-height));
         /* lil-gui reads its width from --width */
         --width: var(--panel-width);
       }
@@ -285,11 +294,11 @@
          panel, and the outline of the loaded variation uses the accent color. */
       .library {
         position: fixed;
-        top: 0;
+        top: var(--project-title-height);
         left: 0;
         z-index: 1001;
         width: var(--panel-width);
-        height: 100%;
+        height: calc(100% - var(--project-title-height));
         display: flex;
         flex-direction: column;
         background: #1f1f1f;
@@ -311,17 +320,19 @@
 
       /* the title above the grid: a bar across the top of the middle, from
          the library to the control panel, styled like the Library title,
-         with the text in the middle */
+         with the text in line with the left edge of the grid */
       .stage-title {
-        text-align: center;
         position: fixed;
-        top: 0;
+        top: var(--project-title-height);
         left: var(--panel-width);
         right: var(--panel-width);
         z-index: 1001;
         height: 36px;
         line-height: 36px;
-        padding: 0 var(--panel-padding);
+        /* the text starts where the grid starts: the grid sits in the middle
+           of this bar, so the space on its left is half of what the grid
+           leaves free */
+        padding: 0 0 0 calc((100vw - 2 * var(--panel-width) - var(--grid-size)) / 2);
         background: #111111;
         color: #ebebeb;
         font-family: 'SpaceGrotesk-Bold', sans-serif;
@@ -330,6 +341,29 @@
         letter-spacing: 1px;
       }
       .stage-title[hidden] {
+        display: none;
+      }
+
+      /* the project title: the project's name across the whole window,
+         above the Library, Iteration and Modes titles, and bigger than
+         them. Its text is projectTitle in src/config.js. */
+      .project-title {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1001;
+        height: var(--project-title-height);
+        line-height: var(--project-title-height);
+        padding: 0 var(--panel-padding);
+        background: #111111;
+        color: #ebebeb;
+        font-family: 'SpaceGrotesk-Bold', sans-serif;
+        font-size: 40px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      .project-title[hidden] {
         display: none;
       }
       .library button,

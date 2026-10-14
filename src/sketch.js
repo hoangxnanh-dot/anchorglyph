@@ -30,6 +30,9 @@
 // Click an anchor     (without dragging) remove it.
 // Single / Multiple   In the Modes section: one drawing in the middle, or
 //                     several iterations at once (Per Row sets how many).
+//                     Each iteration joins the anchors in its own order and
+//                     picks its own Drift and Speed; the grid, the anchor
+//                     positions, the style and the colors stay yours.
 //                     In Multiple, a click on one iteration saves it to the
 //                     library; Save Iteration saves the whole sheet.
 // Double-click a name In the control panel: put that setting back to where
@@ -125,14 +128,15 @@ const splineRanges = {
 };
 
 // Multiple view: the range of the Per Row slider. 2 shows 2 × 2 = 4
-// iterations at once, 4 shows 4 × 4 = 16. More are smaller and draw slower.
-const iterationsPerRowRange = { min: 2, max: 4, step: 1 };
+// iterations at once, 5 shows 5 × 5 = 25. More are smaller and draw slower.
+const iterationsPerRowRange = { min: 2, max: 5, step: 1 };
 // Multiple view: the gap between two iterations, in pixels of the grid.
 const ITERATION_GAP = 16;
-// Multiple view: each iteration nudges these settings away from yours, by
-// up to this share of the slider's range either way (0.15 = 15 %).
-const ITERATION_NUDGE = 0.15;
-const iterationNudgeRanges = { ...splineRanges, driftReach: driftReachRange };
+// Multiple view: the sliders each iteration picks its own value for,
+// anywhere on the slider. Every iteration also joins the anchors in its own
+// order. The grid, where the anchors sit, the spline style and the colors
+// stay yours, so the iterations can be compared side by side.
+const iterationRanges = { driftReach: driftReachRange, speed: speedRange };
 
 // The arrows on the Colors folder: how different Main and Background must
 // be at least, measured as a distance between the two colors (0 = the same,
@@ -330,9 +334,9 @@ let saveWaiting = null;
 // on a newer drawing. See pictureToInk().
 let inkLoadNumber = 0;
 // Multiple view: the iterations drawn at the same time. Each one is
-// { ink, anchors, nudges, noiseSeed, loopStep }: its own ink layer and
-// anchors, how far its settings differ from yours, and its own noise and
-// place in the Animation loop. See buildIterations().
+// { ink, anchors, settings, noiseSeed, loopStep, stepsWaiting }: its own ink
+// layer and anchors, its own Drift and Speed, and its own noise, place in
+// the Animation loop and leftover speed. See buildIterations().
 let iterations = [];
 // Multiple view: an iteration was clicked to be saved. draw() does it at the
 // next frame: { index, resolve }, or null.
@@ -356,6 +360,8 @@ let inkImage;
 let panel;
 let library;
 let stageTitle;
+// The project title across the top of the window, see createProjectTitle().
+let projectHeadline;
 let playbackControls;
 let anchorModeController;
 let glyphControllers = [];
@@ -385,24 +391,25 @@ window.setup = async function setup() {
   else randomAnchors();
 };
 
-window.draw = function draw() {
-  // how many drawing steps this frame gets. In Multiple view every
-  // iteration gets the same number.
-  let steps = 0;
-  if (!animationPaused) {
-    stepsWaiting += uiParams.speed;
-    steps = Math.floor(stepsWaiting);
-    stepsWaiting -= steps;
-  }
+// How many drawing steps this frame gets, at the current speed. In Multiple
+// view each iteration has its own speed, so it is asked once per iteration.
+function stepsThisFrame() {
+  if (animationPaused) return 0;
+  stepsWaiting += uiParams.speed;
+  const steps = Math.floor(stepsWaiting);
+  stepsWaiting -= steps;
+  return steps;
+}
 
+window.draw = function draw() {
   // a clicked iteration is saved first: it is drawn alone, full size, so
   // the saved picture looks like a drawing made in Single view. The frame
   // then starts over with the background below, so it never shows.
   if (iterationSaveWaiting) saveClickedIteration();
 
   background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
-  if (isMultipleView()) drawIterations(steps);
-  else drawSingle(steps);
+  if (isMultipleView()) drawIterations();
+  else drawSingle(stepsThisFrame());
 
   // a hand cursor shows which anchors can be grabbed, or in Multiple view
   // which iteration a click saves
@@ -482,13 +489,13 @@ function placeIteration(index) {
 // Multiple view: every iteration in its spot. First all the drawings, then
 // all the guides on top, so saving the whole sheet in between gets the
 // drawings alone. The iteration under the mouse gets an outline.
-function drawIterations(steps) {
+function drawIterations() {
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
       push();
       placeIteration(index);
       slantGrid();
-      advanceDrawing(steps);
+      advanceDrawing(stepsThisFrame());
       drawInkLayer();
       pop();
     });
@@ -535,54 +542,64 @@ function iterationUnderMouse() {
 }
 
 // Runs `action` with an iteration's drawing in place of the sketch's own:
-// its ink, its anchors, its noise and place in the Animation loop, and your
-// settings with its nudges added. All the drawing code then works on the
-// iteration without knowing it. Afterwards everything is swapped back.
+// its ink, its anchors, its noise, place in the Animation loop and leftover
+// speed, and its own Drift and Speed in place of yours. All the drawing code
+// then works on the iteration without knowing it. Afterwards everything is
+// swapped back.
 function withIteration(iteration, action) {
-  const own = { ink, anchors, loopStep, currentNoiseSeed };
+  const own = { ink, anchors, loopStep, currentNoiseSeed, stepsWaiting };
   const yourValues = {};
-  for (const [settingName, nudge] of Object.entries(iteration.nudges)) {
-    const { min: lowest, max: highest } = iterationNudgeRanges[settingName];
+  for (const [settingName, value] of Object.entries(iteration.settings)) {
     yourValues[settingName] = uiParams[settingName];
-    uiParams[settingName] = constrain(uiParams[settingName] + nudge, lowest, highest);
+    uiParams[settingName] = value;
   }
   ink = iteration.ink;
   anchors = iteration.anchors;
   loopStep = iteration.loopStep;
+  stepsWaiting = iteration.stepsWaiting;
   currentNoiseSeed = iteration.noiseSeed;
   noiseSeed(currentNoiseSeed);
 
   action();
 
   iteration.loopStep = loopStep;
+  iteration.stepsWaiting = stepsWaiting;
   ink = own.ink;
   anchors = own.anchors;
   loopStep = own.loopStep;
+  stepsWaiting = own.stepsWaiting;
   currentNoiseSeed = own.currentNoiseSeed;
   if (currentNoiseSeed !== undefined) noiseSeed(currentNoiseSeed);
   Object.assign(uiParams, yourValues);
 }
 
 // Multiple view: a fresh set of iterations, Per Row × Per Row of them. Each
-// starts from your anchors and settings with an empty ink layer, its own
-// small nudges (see ITERATION_NUDGE), and its own way of drifting: every
-// anchor gets a new heading, restlessness and rhythm.
+// starts from your anchors on your grid, in your style and colors, with an
+// empty ink layer. What it changes: the anchors are joined in a new order,
+// Drift and Speed get random values (see iterationRanges), and every anchor
+// gets a new heading, restlessness and rhythm, so it drifts its own way.
 function buildIterations() {
   const count = uiParams.iterationsPerRow ** 2;
-  iterations = Array.from({ length: count }, (unused, index) => ({
-    ink: new Float32Array(gridSize * gridSize),
-    anchors: anchors.map((anchor) => ({
+  iterations = Array.from({ length: count }, (unused, index) => {
+    const ownAnchors = anchors.map((anchor) => ({
       ...anchor,
       heading: random(TWO_PI),
       restlessness: random(RESTLESSNESS_MIN, RESTLESSNESS_MAX),
       phase: random(TWO_PI),
-    })),
-    nudges: Object.fromEntries(
-      Object.entries(iterationNudgeRanges).map(([settingName, { min: lowest, max: highest }]) => [settingName, random(-1, 1) * ITERATION_NUDGE * (highest - lowest)]),
-    ),
-    noiseSeed: Date.now() + index,
-    loopStep: 0,
-  }));
+    }));
+    // p5's shuffle(); `true` shuffles the copy itself, yours stay in order
+    shuffle(ownAnchors, true);
+    return {
+      ink: new Float32Array(gridSize * gridSize),
+      anchors: ownAnchors,
+      settings: Object.fromEntries(
+        Object.entries(iterationRanges).map(([settingName, range]) => [settingName, randomSliderValue(range)]),
+      ),
+      noiseSeed: Date.now() + index,
+      loopStep: 0,
+      stepsWaiting: 0,
+    };
+  });
 }
 
 // A closed loop needs at least three anchors, an open curve two.
@@ -1453,8 +1470,14 @@ function gridLeft() {
   return leftSide + (width - leftSide - rightSide - gridSize) / 2;
 }
 
+// The grid sits in the middle of the room below the project title and the
+// Iteration title. Hidden titles (g key) take no room.
 function gridTop() {
-  return (height - gridSize) / 2;
+  let titlesHeight = 0;
+  for (const title of [projectHeadline, stageTitle]) {
+    if (title && !title.hidden) titlesHeight += title.offsetHeight;
+  }
+  return titlesHeight + (height - titlesHeight - gridSize) / 2;
 }
 
 // How far the grid's top edge is pushed right for every pixel it sits above
@@ -1615,10 +1638,13 @@ window.addEventListener('keydown', (event) => {
   } else if (event.key.toLowerCase() === 't') {
     toggleAllFolders();
   } else if (event.key === 'g') {
-    // src/lib/gui.js hides the control panel on g; the library and the
-    // title above the grid go with it
+    // src/lib/gui.js hides the control panel on g; the library, the title
+    // above the grid and the project title go with it
     library.toggle();
     stageTitle.hidden = !stageTitle.hidden;
+    projectHeadline.hidden = !projectHeadline.hidden;
+    // the panels and titles move up into its room, see index.html
+    document.body.classList.toggle('without-project-title', projectHeadline.hidden);
   }
 });
 
@@ -1789,7 +1815,7 @@ function refreshPanel() {
 // Together they are the exact state of the drawing, so a loaded variation
 // continues from where it was saved instead of starting over.
 // In Multiple view, Save Iteration keeps the whole sheet as one variation:
-// { settings, iterations }, with every iteration's anchors, nudges, noise,
+// { settings, iterations }, with every iteration's anchors, settings, noise,
 // loop step and ink. Loading it brings the sheet back in Multiple view.
 function captureVariation() {
   // Everything is collected in draw(), at the next frame, right after the
@@ -1835,7 +1861,7 @@ function currentSheet() {
     settings,
     iterations: iterations.map((iteration) => ({
       anchors: iteration.anchors.map((anchor) => ({ ...anchor })),
-      nudges: { ...iteration.nudges },
+      settings: { ...iteration.settings },
       noiseSeed: iteration.noiseSeed,
       loopStep: iteration.loopStep,
       inkPicture: inkToPicture(iteration.ink),
@@ -1950,9 +1976,10 @@ function applySheet({ settings, iterations: savedIterations }) {
     const iteration = {
       ink: new Float32Array(gridSize * gridSize),
       anchors: saved.anchors.map((anchor) => ({ ...anchor })),
-      nudges: { ...saved.nudges },
+      settings: { ...saved.settings },
       noiseSeed: saved.noiseSeed,
       loopStep: saved.loopStep,
+      stepsWaiting: 0,
     };
     pictureToInk(saved.inkPicture, iteration.ink);
     return iteration;
@@ -2066,6 +2093,11 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   // Randomize All and Reset All below it
   addControlsSection(gui);
 
+  // Main, Accent and Background are made by src/lib/gui.js, and moved here.
+  const colors = gui.addFolder('Colors');
+  addRandomizeIcon(colors, randomizeColors);
+  moveColorControlsTo(colors);
+
   const grid = gui.addFolder('Grid');
   // the eye and the Randomize arrows sit on the right of the folder's title
   gridEye = addEyeToggle(grid, uiParams, 'showGrid');
@@ -2110,11 +2142,6 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   slantController = splineSlider('slant').name('Slant');
   showWidthSlider();
   splineSlider('curvature').name('Curvature').onChange(restartDrawing);
-
-  // Main, Accent and Background are made by src/lib/gui.js, and moved here
-  const colors = gui.addFolder('Colors');
-  addRandomizeIcon(colors, randomizeColors);
-  moveColorControlsTo(colors);
 
   const driftFolder = gui.addFolder('Drift');
   addRandomizeIcon(driftFolder, randomizeDrift);
@@ -2221,12 +2248,22 @@ function addPlaybackSection(gui) {
 }
 
 // The title bar at the top of the middle, between the library and the
-// control panel, in the style of the Library title. Its text is
-// projectTitle from src/config.js; its look is in index.html, under "the
-// title above the grid".
+// control panel: the headline of the grid's section, in the style of the
+// Library title. Its look is in index.html, under "the title above the grid".
 function createStageTitle() {
   const title = document.createElement('div');
   title.className = 'stage-title';
+  title.textContent = 'Iteration';
+  document.body.appendChild(title);
+  return title;
+}
+
+// The project's name as a big headline across the whole window, above the
+// three section titles. Its text is projectTitle from src/config.js; its
+// look is in index.html, under "the project title".
+function createProjectTitle() {
+  const title = document.createElement('div');
+  title.className = 'project-title';
   title.textContent = projectTitle;
   document.body.appendChild(title);
   return title;
@@ -2240,6 +2277,7 @@ document.documentElement.style.setProperty('--grid-size', `${gridSize}px`);
 // the setup() and draw() you defined above and runs them.
 library = createLibrary({ capture: captureVariation, apply: applyVariation });
 stageTitle = createStageTitle();
+projectHeadline = createProjectTitle();
 panel = createGUI({
   params: uiParams,
   // the headline at the top of the panel, above the mode switch
