@@ -34,12 +34,16 @@
 //                 the same size, and whether each was showing
 //   apply(data)   rebuilds the drawing from that data
 //
+// The library gives back { element, toggle, save }. save() does what Save
+// Iteration does; save(otherCapture) saves what otherCapture() gives back
+// instead, with the same flash and slide.
+//
 //   const library = createLibrary({ capture, apply });
 //
 // The look of the panel is in index.html, under "the library".
 
 import { screenshotName, variationName, variationDigits } from '../config.js';
-import { downloadFile, timestamp } from './export.js';
+import { saveToDownloads, timestamp } from './export.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
 // camera, and the new card slides down into the list from above while the
@@ -91,10 +95,10 @@ export function createLibrary({ capture, apply }) {
   const saveButton = document.createElement('button');
   saveButton.className = 'library-save';
   saveButton.textContent = 'Save Iteration';
-  saveButton.addEventListener('click', saveCurrent);
+  saveButton.addEventListener('click', () => saveCurrent());
 
   // these two only do something when there is at least one variation
-  const selectAllButton = makeButton('Select all', selectAll);
+  const selectAllButton = makeButton('Select all', selectEverything);
   const deselectAllButton = makeButton('Deselect all', deselectAll);
   const selectionActions = document.createElement('div');
   selectionActions.className = 'library-selection-actions';
@@ -193,9 +197,12 @@ export function createLibrary({ capture, apply }) {
 
   showList();
 
-  async function saveCurrent() {
+  // `captureWith` is capture() unless the sketch passes another function
+  // that gives back the same kind of Promise, like one that saves only a
+  // part of what is on screen.
+  async function saveCurrent(captureWith = capture) {
     showFlash();
-    const { data, picture, svg, guides } = await capture();
+    const { data, picture, svg, guides } = await captureWith();
     const variation = { id: String(Date.now()), name: nextName(), data, picture, svg, guides };
     // where every card is before the new one arrives
     const placesBefore = cardPlaces();
@@ -284,7 +291,7 @@ export function createLibrary({ capture, apply }) {
   // the page is allowed to download several files.
   function exportSelected(format) {
     selectedVariations().forEach((variation, index) => {
-      downloadFile(format === 'png' ? variation.picture : variation.svg, exportFileName(variation, format, index + 1));
+      saveToDownloads(format === 'png' ? variation.picture : variation.svg, exportFileName(variation, format, index + 1));
     });
   }
 
@@ -324,8 +331,8 @@ export function createLibrary({ capture, apply }) {
   }
 
   // Grid and Anchors: show or hide that guide on the preview
-  function toggleLayer(key) {
-    previewLayers[key] = !previewLayers[key];
+  function toggleLayer(layerName) {
+    previewLayers[layerName] = !previewLayers[layerName];
     showPreviewLayers();
   }
 
@@ -356,7 +363,7 @@ export function createLibrary({ capture, apply }) {
 
     // nothing on top: the saved file as it is
     if (guides.length === 0) {
-      downloadFile(format === 'png' ? variation.picture : variation.svg, filename);
+      saveToDownloads(format === 'png' ? variation.picture : variation.svg, filename);
       return;
     }
 
@@ -369,7 +376,7 @@ export function createLibrary({ capture, apply }) {
       const end = drawing.lastIndexOf('</svg>');
       const shapes = guides.map((guide) => guide.slice(guide.indexOf('>') + 1, guide.lastIndexOf('</svg>')));
       const combined = drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end);
-      downloadFile(new Blob([combined], { type: 'image/svg+xml' }), filename);
+      saveToDownloads(new Blob([combined], { type: 'image/svg+xml' }), filename);
       return;
     }
 
@@ -385,7 +392,7 @@ export function createLibrary({ capture, apply }) {
     for (const guide of guides) {
       context.drawImage(await loadPicture(svgToPicture(guide)), 0, 0, canvas.width, canvas.height);
     }
-    downloadFile(canvas.toDataURL('image/png'), filename);
+    saveToDownloads(canvas.toDataURL('image/png'), filename);
   }
 
   // SVG text turned into a data URL, so an <img> can show it
@@ -405,7 +412,7 @@ export function createLibrary({ capture, apply }) {
     return variations.filter(({ id }) => selectedIds.has(id));
   }
 
-  function selectAll() {
+  function selectEverything() {
     for (const { id } of variations) selectedIds.add(id);
     selectionStartId = variations[0]?.id ?? null;
     updateSelectionDisplay();

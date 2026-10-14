@@ -4,16 +4,16 @@
 // p5's textToContours(), with the outlines sorted into letters: an array of
 // letters, each an array of outlines, each an array of { x, y } points.
 // `options` is passed on to p5, for example { sampleFactor: 0.1 }.
-export function textToLetterContours(font, str, x, y, options) {
-  return groupByLetter(font, str, font.textToContours(str, x, y, options));
+export function textToLetterContours(font, word, x, y, options) {
+  return groupByLetter(font, word, font.textToContours(word, x, y, options));
 }
 
 // Sorts contours into letters: each letter takes as many as it has on its
 // own (2 for "A", 1 for "L"). Spaces are left out.
-export function groupByLetter(font, str, contours) {
+export function groupByLetter(font, word, contours) {
   const letters = [];
   let nextContour = 0;
-  for (const character of str) {
+  for (const character of word) {
     const count = countContours(font, character);
     letters.push(contours.slice(nextContour, nextContour + count));
     nextContour += count;

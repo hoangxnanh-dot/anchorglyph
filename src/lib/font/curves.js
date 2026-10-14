@@ -10,11 +10,11 @@ const HANDLE_DOT_SIZE = 6;
 const anchorColor = { r: 255, g: 160, b: 0 };
 const handleColor = { r: 0, g: 200, b: 255 };
 
-// Reads the outlines of `str` as it would be drawn by text(str, x, y), using
+// Reads the outlines of `word` as it would be drawn by text(word, x, y), using
 // whatever textSize() and textAlign() are set right now.
-export function textToCurves(font, str, x, y) {
-  const contours = commandsToContours(font.textToPaths(str, x, y));
-  return groupByLetter(font, str, contours);
+export function textToCurves(font, word, x, y) {
+  const contours = commandsToContours(font.textToPaths(word, x, y));
+  return groupByLetter(font, word, contours);
 }
 
 function commandsToContours(commands) {

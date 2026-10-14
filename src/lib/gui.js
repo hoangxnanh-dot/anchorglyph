@@ -162,10 +162,10 @@ export function createGUI({
   // `params` is the uiParams object from sketch.js, so changing it here is
   // what the sketch sees in draw(). Templates without these values are skipped.
   const toggleHelpers = () => {
-    const keys = ['showGrid', 'showAnchors'].filter((key) => key in params);
+    const keys = ['showGrid', 'showAnchors'].filter((property) => property in params);
     if (keys.length === 0) return;
-    const show = !keys.some((key) => params[key]);
-    keys.forEach((key) => { params[key] = show; });
+    const show = !keys.some((property) => params[property]);
+    keys.forEach((property) => { params[property] = show; });
     // make the checkboxes in the panel match
     gui.controllersRecursive().forEach((controller) => controller.updateDisplay());
     // and anything the sketch built itself, like the eye icons
@@ -218,21 +218,21 @@ function setPanelStyle(gui, variable, value) {
 // typed text and the chosen part of a switch. The Accent picker calls this
 // on every change; call it yourself after changing the accent in code.
 export function colorPanelInAccent(gui, { r, g, b }) {
-  const color = `rgb(${r}, ${g}, ${b})`;
-  setPanelStyle(gui, '--number-color', color);
-  setPanelStyle(gui, '--string-color', color);
+  const colorText = `rgb(${r}, ${g}, ${b})`;
+  setPanelStyle(gui, '--number-color', colorText);
+  setPanelStyle(gui, '--string-color', colorText);
   // also for the rest of the page, like the library on the left
-  document.documentElement.style.setProperty('--accent-color', color);
+  document.documentElement.style.setProperty('--accent-color', colorText);
 }
 
 // A button split into parts, one per option, like [ Shape | Glyph ]. The part
-// that matches params[key] is lit up. lil-gui only has dropdowns for this, so
+// that matches params[property] is lit up. lil-gui only has dropdowns for this, so
 // the row is built here from lil-gui's own classes to look like the rest.
 //
 //   addSwitch(folder, uiParams, 'anchorMode', ['Shape', 'Glyph'], (mode) => { ... });
 //
-// Call updateDisplay() on what it returns after changing params[key] in code.
-export function addSwitch(folder, params, key, options, onChange = () => {}) {
+// Call updateDisplay() on what it returns after changing params[property] in code.
+export function addSwitch(folder, params, property, options, onChange = () => {}) {
   const row = document.createElement('div');
   row.classList.add('lil-controller');
   const widget = document.createElement('div');
@@ -245,8 +245,8 @@ export function addSwitch(folder, params, key, options, onChange = () => {}) {
     const button = document.createElement('button');
     button.textContent = option;
     button.addEventListener('click', () => {
-      if (params[key] === option) return;
-      params[key] = option;
+      if (params[property] === option) return;
+      params[property] = option;
       updateDisplay();
       onChange(option);
     });
@@ -257,7 +257,7 @@ export function addSwitch(folder, params, key, options, onChange = () => {}) {
   // the chosen part lights up in the panel's accent color, with dark text
   function updateDisplay() {
     buttons.forEach((button, index) => {
-      const chosen = params[key] === options[index];
+      const chosen = params[property] === options[index];
       button.style.background = chosen ? 'var(--number-color)' : '';
       button.style.color = chosen ? 'var(--background-color)' : '';
     });
@@ -279,12 +279,12 @@ export function addSwitch(folder, params, key, options, onChange = () => {}) {
 // object of { 'Label shown': value }. Leave out `name` and the field takes
 // the whole row, with no name in front. With a name, double-clicking it goes
 // back to the starting option, like the other controls. Call updateDisplay()
-// on what it returns after changing params[key] in code.
-export function addCycler(folder, params, key, options, { name, onChange = () => {} } = {}) {
+// on what it returns after changing params[property] in code.
+export function addCycler(folder, params, property, options, { name, onChange = () => {} } = {}) {
   const entries = Array.isArray(options) ? options.map((option) => [option, option]) : Object.entries(options);
   const labels = entries.map(([label]) => label);
   const values = entries.map(([, value]) => value);
-  const startingValue = params[key];
+  const startingValue = params[property];
 
   const row = document.createElement('div');
   row.classList.add('lil-controller');
@@ -314,22 +314,22 @@ export function addCycler(folder, params, key, options, { name, onChange = () =>
   widget.appendChild(button);
 
   function updateDisplay() {
-    shown.textContent = labels[values.indexOf(params[key])] ?? params[key];
+    shown.textContent = labels[values.indexOf(params[property])] ?? params[property];
   }
 
   function choose(value) {
-    if (params[key] === value) return;
-    params[key] = value;
+    if (params[property] === value) return;
+    params[property] = value;
     updateDisplay();
     onChange(value);
   }
 
   button.addEventListener('click', (event) => {
     // which half of the button was clicked: left steps back, right forward
-    const box = button.getBoundingClientRect();
-    const direction = event.clientX < box.left + box.width / 2 ? -1 : 1;
+    const buttonBox = button.getBoundingClientRect();
+    const direction = event.clientX < buttonBox.left + buttonBox.width / 2 ? -1 : 1;
     // the % wraps around, so after the last option comes the first again
-    const index = (values.indexOf(params[key]) + direction + values.length) % values.length;
+    const index = (values.indexOf(params[property]) + direction + values.length) % values.length;
     choose(values[index]);
   });
 
@@ -386,20 +386,20 @@ function addTitleIcon(folder, onClick) {
   return icon;
 }
 
-// An eye that hides or shows something: params[key] is true or false.
-// Call updateDisplay() on what it returns after changing params[key] in code.
-export function addEyeToggle(folder, params, key, onChange = () => {}) {
+// An eye that hides or shows something: params[property] is true or false.
+// Call updateDisplay() on what it returns after changing params[property] in code.
+export function addEyeToggle(folder, params, property, onChange = () => {}) {
   const icon = addTitleIcon(folder, () => {
-    params[key] = !params[key];
+    params[property] = !params[property];
     updateDisplay();
-    onChange(params[key]);
+    onChange(params[property]);
   });
 
   // an open eye while it shows, a crossed-out, faded eye while it is hidden
   function updateDisplay() {
-    icon.innerHTML = params[key] ? EYE_OPEN : EYE_CLOSED;
-    icon.style.opacity = params[key] ? '1' : '0.4';
-    icon.title = params[key] ? 'Hide' : 'Show';
+    icon.innerHTML = params[property] ? EYE_OPEN : EYE_CLOSED;
+    icon.style.opacity = params[property] ? '1' : '0.4';
+    icon.title = params[property] ? 'Hide' : 'Show';
   }
 
   updateDisplay();
@@ -427,9 +427,9 @@ export function addRandomizeIcon(folder, randomize) {
 //   addStepper(folder, uiParams, 'columns', { min: 1, max: 32, onChange: resizeGrid });
 //
 // Typed values are rounded and kept between min and max. Call
-// updateDisplay() on what it returns after changing params[key] in code,
+// updateDisplay() on what it returns after changing params[property] in code,
 // and show(false) or show(true) to hide or show it.
-export function addStepper(folder, params, key, { name = key, min, max, onChange = () => {} }) {
+export function addStepper(folder, params, property, { name = property, min: lowest, max: highest, onChange = () => {} }) {
   // lil-number gives the box lil-gui's blue number color
   const row = document.createElement('div');
   row.classList.add('lil-controller', 'lil-number');
@@ -441,9 +441,9 @@ export function addStepper(folder, params, key, { name = key, min, max, onChange
   widget.style.gap = 'var(--spacing)';
   row.append(label, widget);
 
-  const makeButton = (text) => {
+  const makeButton = (buttonText) => {
     const button = document.createElement('button');
-    button.textContent = text;
+    button.textContent = buttonText;
     // square buttons, so the box in the middle gets the rest of the width
     button.style.width = 'var(--button-height)';
     button.style.flexShrink = '0';
@@ -459,20 +459,20 @@ export function addStepper(folder, params, key, { name = key, min, max, onChange
   widget.append(minus, input, plus);
 
   function updateDisplay() {
-    input.value = params[key];
+    input.value = params[property];
   }
 
   function setValue(value) {
-    const kept = constrain(Math.round(value), min, max);
-    const changed = kept !== params[key];
-    params[key] = kept;
+    const kept = constrain(Math.round(value), lowest, highest);
+    const changed = kept !== params[property];
+    params[property] = kept;
     // shows the kept value, also when what was typed got rounded or limited
     updateDisplay();
     if (changed) onChange(kept);
   }
 
-  minus.addEventListener('click', () => setValue(params[key] - 1));
-  plus.addEventListener('click', () => setValue(params[key] + 1));
+  minus.addEventListener('click', () => setValue(params[property] - 1));
+  plus.addEventListener('click', () => setValue(params[property] + 1));
 
   // a typed number counts once you press Enter or click somewhere else.
   // Anything that isn't a number puts the old value back.

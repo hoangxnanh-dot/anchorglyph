@@ -15,15 +15,15 @@ export function parabola(x, sharpness) {
 
 // A smooth bump: 1 at `center`, falling to 0 at `pulseWidth` either side.
 export function cubicPulse(center, pulseWidth, x) {
-  const distance = abs(x - center);
-  if (distance > pulseWidth) return 0;
-  const t = distance / pulseWidth;
+  const offset = abs(x - center);
+  if (offset > pulseWidth) return 0;
+  const t = offset / pulseWidth;
   return 1 - t * t * (3 - 2 * t);
 }
 
 // cubicPulse on a loop from 0 to 1: a bump near 1 carries on at 0, so a
 // pulse can travel round and round without a jump.
 export function cubicPulseWrap(center, pulseWidth, x) {
-  const distance = abs(x - center);
-  return cubicPulse(0, pulseWidth, min(distance, 1 - distance));
+  const offset = abs(x - center);
+  return cubicPulse(0, pulseWidth, min(offset, 1 - offset));
 }

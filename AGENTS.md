@@ -37,7 +37,7 @@ lil-gui. Do not add TypeScript, linters, test frameworks or new dependencies.
 | Task | Use |
 | --- | --- |
 | Bézier curves to draw or deform | `textToCurves()`, `drawCurves()`, `moveAnchor()` |
-| Points along outlines, per letter | `textToLetterContours(font, str, x, y, { sampleFactor })` |
+| Points along outlines, per letter | `textToLetterContours(font, word, x, y, { sampleFactor })` |
 | Center of a letter | `getCenter(positions)` |
 | Spots spaced along an outline | `placeAlongOutline(outline, spacing, offset)` |
 | All points, flat | p5's `font.textToPoints()` |

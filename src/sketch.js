@@ -28,6 +28,10 @@
 // Drag an anchor      Move it around the grid. When you let go, it jumps
 //                     to the centre of the cell you drop it in.
 // Click an anchor     (without dragging) remove it.
+// Single / Multiple   In the Modes section: one drawing in the middle, or
+//                     several iterations at once (Per Row sets how many).
+//                     In Multiple, a click on one iteration saves it to the
+//                     library; Save Iteration saves the whole sheet.
 // Double-click a name In the control panel: put that setting back to where
 //                     it started.
 //
@@ -120,6 +124,16 @@ const splineRanges = {
   curvature: { min: -1, max: 1, step: 0.01 },
 };
 
+// Multiple view: the range of the Per Row slider. 2 shows 2 × 2 = 4
+// iterations at once, 4 shows 4 × 4 = 16. More are smaller and draw slower.
+const iterationsPerRowRange = { min: 2, max: 4, step: 1 };
+// Multiple view: the gap between two iterations, in pixels of the grid.
+const ITERATION_GAP = 16;
+// Multiple view: each iteration nudges these settings away from yours, by
+// up to this share of the slider's range either way (0.15 = 15 %).
+const ITERATION_NUDGE = 0.15;
+const iterationNudgeRanges = { ...splineRanges, driftReach: driftReachRange };
+
 // The arrows on the Colors folder: how different Main and Background must
 // be at least, measured as a distance between the two colors (0 = the same,
 // about 441 = black and white). Otherwise the drawing could vanish.
@@ -138,6 +152,8 @@ const uiParams = {
   showAnchors: true,
 
   anchorMode: 'Glyph', // 'Shape', 'Glyph' or 'Animation'; the sketch opens in this one
+  viewMode: 'Single',  // 'Single' = one drawing, 'Multiple' = several iterations at once
+  iterationsPerRow: 2, // Multiple: 2 = a 2 × 2 sheet of four iterations
   shapeSize: 1,        // the cell styles: how much of its cell a full shape covers
   slant: 30,           // Parallel Pen: how many degrees the rhomboids' sides lean
   anchorCount: 15,
@@ -309,9 +325,18 @@ let currentNoiseSeed;
 // before the grid and anchors are drawn on top, so the picture shows the
 // drawing alone.
 let saveWaiting = null;
-// A loaded variation's ink picture that the browser is still unpacking, or
-// null. See pictureToInk().
-let inkPictureLoading = null;
+// Counts up whenever the ink starts over or a variation is loaded. A loaded
+// ink picture the browser is still unpacking checks it, so it doesn't land
+// on a newer drawing. See pictureToInk().
+let inkLoadNumber = 0;
+// Multiple view: the iterations drawn at the same time. Each one is
+// { ink, anchors, nudges, noiseSeed, loopStep }: its own ink layer and
+// anchors, how far its settings differ from yours, and its own noise and
+// place in the Animation loop. See buildIterations().
+let iterations = [];
+// Multiple view: an iteration was clicked to be saved. draw() does it at the
+// next frame: { index, resolve }, or null.
+let iterationSaveWaiting = null;
 // The anchor being dragged: { anchor, startX, startY, moved }, or null.
 let dragging = null;
 
@@ -344,6 +369,8 @@ let anchorsEye;
 let lineWidthController;
 let shapeWidthController;
 let paintModeController;
+let viewModeController;
+let iterationsPerRowController;
 let textureController;
 let slantController;
 
@@ -359,43 +386,204 @@ window.setup = async function setup() {
 };
 
 window.draw = function draw() {
-  background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
-  translate(gridLeft(), gridTop());
-  // everything below is drawn on the slanted grid
-  slantGrid();
-
-  // The curve is dusted on over time with every style. Most styles show that
-  // ink as it is; the cell styles turn the ink in each cell into a shape.
-  if (hasEnoughAnchors()) {
-    if (!animationPaused) {
-      stepsWaiting += uiParams.speed;
-      let stepsThisFrame = 0;
-      while (stepsWaiting >= 1) {
-        if (uiParams.anchorMode === 'Animation') loopAnchors();
-        else driftAnchors();
-        paintMarks(anchors.map(anchorPosition));
-        stepsWaiting -= 1;
-        stepsThisFrame += 1;
-      }
-      if (uiParams.anchorMode === 'Animation') fadeInk(stepsThisFrame);
-    }
-    if (isCellStyle()) drawInkCells();
-    else drawInk();
+  // how many drawing steps this frame gets. In Multiple view every
+  // iteration gets the same number.
+  let steps = 0;
+  if (!animationPaused) {
+    stepsWaiting += uiParams.speed;
+    steps = Math.floor(stepsWaiting);
+    stepsWaiting -= steps;
   }
+
+  // a clicked iteration is saved first: it is drawn alone, full size, so
+  // the saved picture looks like a drawing made in Single view. The frame
+  // then starts over with the background below, so it never shows.
+  if (iterationSaveWaiting) saveClickedIteration();
+
+  background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+  if (isMultipleView()) drawIterations(steps);
+  else drawSingle(steps);
+
+  // a hand cursor shows which anchors can be grabbed, or in Multiple view
+  // which iteration a click saves
+  if (dragging) cursor('grabbing');
+  else if (anchorUnderMouse()) cursor('grab');
+  else if (isMultipleView() && iterationUnderMouse() >= 0) cursor(HAND);
+  else cursor('default');
+};
+
+// Single view: the one drawing in the middle, on the slanted grid.
+function drawSingle(steps) {
+  push();
+  translate(gridLeft(), gridTop());
+  slantGrid();
+  advanceDrawing(steps);
+  drawInkLayer();
+  if (saveWaiting) {
+    saveWaiting();
+    saveWaiting = null;
+  }
+  drawGuides();
+  pop();
+}
+
+// The drawing moves on by `steps`: the anchors drift (or follow their loop
+// in Animation) and the curve is dusted on.
+function advanceDrawing(steps) {
+  if (!hasEnoughAnchors()) return;
+  for (let stepNumber = 0; stepNumber < steps; stepNumber++) {
+    if (uiParams.anchorMode === 'Animation') loopAnchors();
+    else driftAnchors();
+    paintMarks(anchors.map(anchorPosition));
+  }
+  if (uiParams.anchorMode === 'Animation' && steps > 0) fadeInk(steps);
+}
+
+// Most styles show the ink as it is; the cell styles turn the ink in each
+// cell into a shape.
+function drawInkLayer() {
+  if (!hasEnoughAnchors()) return;
+  if (isCellStyle()) drawInkCells();
+  else drawInk();
+}
+
+function drawGuides() {
+  if (uiParams.showGrid) drawGridLines();
+  if (uiParams.showAnchors) drawAnchors();
+}
+
+function isMultipleView() {
+  return uiParams.viewMode === 'Multiple';
+}
+
+// Multiple view: where iteration number `index` sits on the grid's square,
+// counted in rows from the top left, and how much smaller than the grid it
+// is drawn.
+function iterationPlace(index) {
+  const perRow = uiParams.iterationsPerRow;
+  const size = (gridSize - ITERATION_GAP * (perRow - 1)) / perRow;
+  const column = index % perRow;
+  const row = Math.floor(index / perRow);
+  return {
+    x: column * (size + ITERATION_GAP),
+    y: row * (size + ITERATION_GAP),
+    size,
+    scaleFactor: size / gridSize,
+  };
+}
+
+// Moves and shrinks everything drawn after it into iteration `index`'s spot.
+function placeIteration(index) {
+  const { x, y, scaleFactor } = iterationPlace(index);
+  translate(gridLeft() + x, gridTop() + y);
+  scale(scaleFactor);
+}
+
+// Multiple view: every iteration in its spot. First all the drawings, then
+// all the guides on top, so saving the whole sheet in between gets the
+// drawings alone. The iteration under the mouse gets an outline.
+function drawIterations(steps) {
+  iterations.forEach((iteration, index) => {
+    withIteration(iteration, () => {
+      push();
+      placeIteration(index);
+      slantGrid();
+      advanceDrawing(steps);
+      drawInkLayer();
+      pop();
+    });
+  });
 
   if (saveWaiting) {
     saveWaiting();
     saveWaiting = null;
   }
 
-  if (uiParams.showGrid) drawGridLines();
-  if (uiParams.showAnchors) drawAnchors();
+  iterations.forEach((iteration, index) => {
+    withIteration(iteration, () => {
+      push();
+      placeIteration(index);
+      slantGrid();
+      drawGuides();
+      pop();
+    });
+  });
 
-  // a hand cursor shows which anchors can be grabbed
-  if (dragging) cursor('grabbing');
-  else if (anchorUnderMouse()) cursor('grab');
-  else cursor('default');
-};
+  // a click on it saves this one to the library
+  const hovered = iterationUnderMouse();
+  if (hovered >= 0) {
+    const { x, y, size } = iterationPlace(hovered);
+    const { r, g, b } = uiParams.accentColor;
+    push();
+    translate(gridLeft(), gridTop());
+    noFill();
+    stroke(r, g, b);
+    strokeWeight(2);
+    rect(x, y, size, size);
+    pop();
+  }
+}
+
+// Multiple view: the number of the iteration under the mouse, or -1.
+function iterationUnderMouse() {
+  const x = mouseX - gridLeft();
+  const y = mouseY - gridTop();
+  return iterations.findIndex((iteration, index) => {
+    const place = iterationPlace(index);
+    return x >= place.x && x < place.x + place.size && y >= place.y && y < place.y + place.size;
+  });
+}
+
+// Runs `action` with an iteration's drawing in place of the sketch's own:
+// its ink, its anchors, its noise and place in the Animation loop, and your
+// settings with its nudges added. All the drawing code then works on the
+// iteration without knowing it. Afterwards everything is swapped back.
+function withIteration(iteration, action) {
+  const own = { ink, anchors, loopStep, currentNoiseSeed };
+  const yourValues = {};
+  for (const [settingName, nudge] of Object.entries(iteration.nudges)) {
+    const { min: lowest, max: highest } = iterationNudgeRanges[settingName];
+    yourValues[settingName] = uiParams[settingName];
+    uiParams[settingName] = constrain(uiParams[settingName] + nudge, lowest, highest);
+  }
+  ink = iteration.ink;
+  anchors = iteration.anchors;
+  loopStep = iteration.loopStep;
+  currentNoiseSeed = iteration.noiseSeed;
+  noiseSeed(currentNoiseSeed);
+
+  action();
+
+  iteration.loopStep = loopStep;
+  ink = own.ink;
+  anchors = own.anchors;
+  loopStep = own.loopStep;
+  currentNoiseSeed = own.currentNoiseSeed;
+  if (currentNoiseSeed !== undefined) noiseSeed(currentNoiseSeed);
+  Object.assign(uiParams, yourValues);
+}
+
+// Multiple view: a fresh set of iterations, Per Row × Per Row of them. Each
+// starts from your anchors and settings with an empty ink layer, its own
+// small nudges (see ITERATION_NUDGE), and its own way of drifting: every
+// anchor gets a new heading, restlessness and rhythm.
+function buildIterations() {
+  const count = uiParams.iterationsPerRow ** 2;
+  iterations = Array.from({ length: count }, (unused, index) => ({
+    ink: new Float32Array(gridSize * gridSize),
+    anchors: anchors.map((anchor) => ({
+      ...anchor,
+      heading: random(TWO_PI),
+      restlessness: random(RESTLESSNESS_MIN, RESTLESSNESS_MAX),
+      phase: random(TWO_PI),
+    })),
+    nudges: Object.fromEntries(
+      Object.entries(iterationNudgeRanges).map(([settingName, { min: lowest, max: highest }]) => [settingName, random(-1, 1) * ITERATION_NUDGE * (highest - lowest)]),
+    ),
+    noiseSeed: Date.now() + index,
+    loopStep: 0,
+  }));
+}
 
 // A closed loop needs at least three anchors, an open curve two.
 function hasEnoughAnchors() {
@@ -510,9 +698,11 @@ function resizeGrid() {
 // Clears the ink and puts every anchor back in its cell.
 // It also un-pauses: otherwise clearing or iterating while paused would leave
 // an empty canvas with nothing being drawn onto it.
+// In Multiple view the iterations start over too, as a fresh set built
+// from the anchors and settings as they are now.
 function restartDrawing() {
   setPaused(false);
-  inkPictureLoading = null;
+  inkLoadNumber += 1;
   if (ink) ink.fill(0);
   loopStep = 0;
   for (const anchor of anchors) {
@@ -520,6 +710,7 @@ function restartDrawing() {
     anchor.dy = 0;
     anchor.noise = 0;
   }
+  if (isMultipleView()) buildIterations();
 }
 
 // 'Glyph' mode: the text's anchor points replace all other anchors.
@@ -548,8 +739,8 @@ function textAnchors() {
   }
   if (points.length === 0) return [];
 
-  const xValues = points.map((point) => point.x);
-  const yValues = points.map((point) => point.y);
+  const xValues = points.map((fontPoint) => fontPoint.x);
+  const yValues = points.map((fontPoint) => fontPoint.y);
   const minX = Math.min(...xValues);
   const minY = Math.min(...yValues);
   const pointsWidth = Math.max(...xValues) - minX;
@@ -566,9 +757,9 @@ function textAnchors() {
   const offsetY = (gridSize - pointsHeight * fitScale) / 2;
   const { cellWidth, cellHeight } = cellSize();
 
-  return points.map((point) => {
-    const x = offsetX + (point.x - minX) * fitScale;
-    const y = offsetY + (point.y - minY) * fitScale;
+  return points.map((fontPoint) => {
+    const x = offsetX + (fontPoint.x - minX) * fitScale;
+    const y = offsetY + (fontPoint.y - minY) * fitScale;
     const row = Math.min(uiParams.rows - 1, Math.floor(y / cellHeight));
     const column = Math.min(uiParams.columns - 1, Math.floor(x / cellWidth));
     // it sits in the middle of the cell the font's point falls in, like
@@ -725,7 +916,7 @@ function pulseAlongCurve(pulses, u) {
 }
 
 // The point on the curve at u, as [x, y].
-function splinePoint(points, u) {
+function pointOnSpline(points, u) {
   const anchorCount = points.length;
   const segment = segmentAt(anchorCount, u);
   const along = u - segment;
@@ -766,16 +957,16 @@ function splinePoint(points, u) {
 function exaggerateBends(points) {
   if (uiParams.curvature <= 0) return points;
   const count = points.length;
-  return points.map((point, index) => {
+  return points.map((anchorPoint, index) => {
     // an open curve's two ends have only one neighbour, so they stay put
-    if (!uiParams.closed && (index === 0 || index === count - 1)) return point;
+    if (!uiParams.closed && (index === 0 || index === count - 1)) return anchorPoint;
     const before = points[(index - 1 + count) % count];
     const after = points[(index + 1) % count];
     const halfwayX = (before[0] + after[0]) / 2;
     const halfwayY = (before[1] + after[1]) / 2;
     return [
-      point[0] + (point[0] - halfwayX) * uiParams.curvature,
-      point[1] + (point[1] - halfwayY) * uiParams.curvature,
+      anchorPoint[0] + (anchorPoint[0] - halfwayX) * uiParams.curvature,
+      anchorPoint[1] + (anchorPoint[1] - halfwayY) * uiParams.curvature,
     ];
   });
 }
@@ -802,7 +993,7 @@ function paintMarks(anchorPoints) {
     // width for the shapes, so their dots stay single pixels.
     for (let mark = 0; mark < uiParams.dotsPerStep; mark++) {
       const u = random(segments);
-      const [x, y] = splinePoint(points, u);
+      const [x, y] = pointOnSpline(points, u);
       const dotWidth = uiParams.textureWeight * pulseAlongCurve(pulses, u);
       const radius = isCellStyle() ? 0 : Math.max(0, (dotWidth - 1) / 2);
       addInk(x, y, radius, opacity);
@@ -818,10 +1009,10 @@ function paintMarks(anchorPoints) {
 
   for (let mark = 0; mark < uiParams.dotsPerStep / fogThinning; mark++) {
     const u = random(segments);
-    const [x, y] = splinePoint(points, u);
+    const [x, y] = pointOnSpline(points, u);
     // the direction the curve runs here, and the one straight across it
-    const [beforeX, beforeY] = splinePoint(points, Math.max(0, u - TANGENT_STEP));
-    const [afterX, afterY] = splinePoint(points, Math.min(segments, u + TANGENT_STEP));
+    const [beforeX, beforeY] = pointOnSpline(points, Math.max(0, u - TANGENT_STEP));
+    const [afterX, afterY] = pointOnSpline(points, Math.min(segments, u + TANGENT_STEP));
     const tangentLength = Math.max(1, dist(beforeX, beforeY, afterX, afterY));
     const acrossX = -(afterY - beforeY) / tangentLength;
     const acrossY = (afterX - beforeX) / tangentLength;
@@ -867,7 +1058,7 @@ function fillInside(points, segments) {
   const pieceCount = segments * FILL_PIECES_PER_SEGMENT;
   const corners = [];
   for (let piece = 0; piece < pieceCount; piece++) {
-    corners.push(splinePoint(points, piece / FILL_PIECES_PER_SEGMENT));
+    corners.push(pointOnSpline(points, piece / FILL_PIECES_PER_SEGMENT));
   }
 
   // only the rows the curve reaches, and never outside the grid
@@ -892,7 +1083,7 @@ function fillInside(points, segments) {
   const opacity = uiParams.dotOpacity * uiParams.textureOpacity;
   crossingsPerRow.forEach((crossings, index) => {
     const row = topRow + index;
-    crossings.sort((first, second) => first - second);
+    crossings.sort((left, right) => left - right);
     // the crossings come in pairs: in at the first, out at the second
     for (let pair = 0; pair + 1 < crossings.length; pair += 2) {
       const startColumn = Math.max(0, Math.ceil(crossings[pair] - 0.5));
@@ -1056,14 +1247,14 @@ function svgColor({ r, g, b }) {
 // The SVG file's text, as a list of lines from <svg ...> down to </svg>.
 // The library keeps one with each saved variation, to export it later.
 function drawingSVG() {
-  const color = svgColor(uiParams.foregroundColor);
+  const colorText = svgColor(uiParams.foregroundColor);
   const shapes = [];
 
   if (!isCellStyle()) {
-    shapes.push(...inkToSVG(color));
+    shapes.push(...inkToSVG(colorText));
   } else {
     for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
-      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, `fill="${color}"`));
+      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, `fill="${colorText}"`));
     }
   }
   return svgFile(shapes, uiParams.backgroundColor);
@@ -1079,12 +1270,12 @@ function svgFile(shapes, backgroundColor) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
   const middle = gridSize / 2;
-  const background = backgroundColor
+  const backgroundShapes = backgroundColor
     ? [`<rect x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
     : [];
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
-    ...background,
+    ...backgroundShapes,
     `<g transform="translate(${middle} ${middle}) skewX(${-uiParams.gridSlant}) translate(${-middle} ${-middle})">`,
     ...shapes,
     '</g>',
@@ -1113,7 +1304,7 @@ function cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, paint) {
 // library's preview shows it with the Grid button and can add it to exports.
 function gridSVG() {
   const { cellWidth, cellHeight } = cellSize();
-  const color = svgColor(guideStyle.gridLineColor);
+  const colorText = svgColor(guideStyle.gridLineColor);
   const opacity = (guideStyle.gridLineOpacity / SVG_FULL_OPACITY).toFixed(3);
   const lines = [];
   for (let column = 0; column <= uiParams.columns; column++) {
@@ -1124,7 +1315,7 @@ function gridSVG() {
     const y = round(row * cellHeight, SVG_DECIMALS);
     lines.push(`<line x1="0" y1="${y}" x2="${gridSize}" y2="${y}"/>`);
   }
-  return svgFile([`<g stroke="${color}" stroke-opacity="${opacity}" stroke-width="1">`, ...lines, '</g>']);
+  return svgFile([`<g stroke="${colorText}" stroke-opacity="${opacity}" stroke-width="1">`, ...lines, '</g>']);
 }
 
 // The anchors as a see-through SVG file, like drawAnchors() shows them: the
@@ -1133,7 +1324,7 @@ function gridSVG() {
 // button and can add it to exports.
 function anchorsSVG() {
   const points = anchors.map(anchorPosition);
-  const color = svgColor(uiParams.accentColor);
+  const colorText = svgColor(uiParams.accentColor);
   const rounded = (value) => round(value, SVG_DECIMALS);
   const parts = [];
 
@@ -1142,7 +1333,7 @@ function anchorsSVG() {
     // a polygon closes the loop, a polyline leaves it open
     const tag = uiParams.closed && points.length >= 3 ? 'polygon' : 'polyline';
     const opacity = (guideStyle.polygonOpacity / SVG_FULL_OPACITY).toFixed(3);
-    parts.push(`<${tag} points="${corners}" fill="none" stroke="${color}" stroke-opacity="${opacity}"/>`);
+    parts.push(`<${tag} points="${corners}" fill="none" stroke="${colorText}" stroke-opacity="${opacity}"/>`);
   }
 
   const { cellWidth, cellHeight } = cellSize();
@@ -1150,14 +1341,14 @@ function anchorsSVG() {
   points.forEach(([x, y], index) => {
     const anchor = anchors[index];
     if (isCellStyle()) {
-      const paint = `fill="${color}" fill-opacity="${shapeOpacity}" stroke="${color}"`;
+      const paint = `fill="${colorText}" fill-opacity="${shapeOpacity}" stroke="${colorText}"`;
       parts.push(cellShapeSVG((anchor.column + 0.5) * cellWidth, (anchor.row + 0.5) * cellHeight, cellWidth, cellHeight, paint));
     } else {
-      parts.push(`<circle cx="${rounded(x)}" cy="${rounded(y)}" r="${guideStyle.anchorDotSize / 2}" fill="${color}"/>`);
+      parts.push(`<circle cx="${rounded(x)}" cy="${rounded(y)}" r="${guideStyle.anchorDotSize / 2}" fill="${colorText}"/>`);
     }
     const numberX = rounded(x + guideStyle.numberOffset);
     const numberY = rounded(y - guideStyle.numberOffset);
-    parts.push(`<text x="${numberX}" y="${numberY}" font-size="${guideStyle.numberSize}" font-family="sans-serif" fill="${color}">${index + 1}</text>`);
+    parts.push(`<text x="${numberX}" y="${numberY}" font-size="${guideStyle.numberSize}" font-family="sans-serif" fill="${colorText}">${index + 1}</text>`);
   });
   return svgFile(parts);
 }
@@ -1166,7 +1357,7 @@ function anchorsSVG() {
 // SVG_INK_LEVELS shades. Each row is cut into runs of pixels with the same
 // shade; every run becomes a 1 pixel tall strip. All strips of one shade
 // share one <path>, which keeps the file small enough to open.
-function inkToSVG(color) {
+function inkToSVG(colorText) {
   const stripsPerShade = Array.from({ length: SVG_INK_LEVELS }, () => []);
   const shadeAt = (x, y) => Math.round(ink[y * gridSize + x] * SVG_INK_LEVELS);
 
@@ -1186,7 +1377,7 @@ function inkToSVG(color) {
     .map((strips, index) => {
       if (strips.length === 0) return '';
       const opacity = ((index + 1) / SVG_INK_LEVELS).toFixed(3);
-      return `<path fill="${color}" fill-opacity="${opacity}" d="${strips.join('')}"/>`;
+      return `<path fill="${colorText}" fill-opacity="${opacity}" d="${strips.join('')}"/>`;
     })
     .filter((path) => path !== '');
 }
@@ -1298,16 +1489,17 @@ function gridMouse() {
 // The anchor closest to the mouse, if one is within GRAB_RADIUS.
 // Hidden anchors (eye icon or h key) can't be grabbed.
 function anchorUnderMouse() {
-  if (!uiParams.showAnchors) return null;
+  // in Multiple view the anchors are small and many: a click saves instead
+  if (!uiParams.showAnchors || isMultipleView()) return null;
   const [mouseGridX, mouseGridY] = gridMouse();
   let closest = null;
   let closestDistance = GRAB_RADIUS;
   for (const anchor of anchors) {
     const [x, y] = anchorPosition(anchor);
-    const distance = dist(x, y, mouseGridX, mouseGridY);
-    if (distance <= closestDistance) {
+    const distanceToMouse = dist(x, y, mouseGridX, mouseGridY);
+    if (distanceToMouse <= closestDistance) {
       closest = anchor;
-      closestDistance = distance;
+      closestDistance = distanceToMouse;
     }
   }
   return closest;
@@ -1316,6 +1508,13 @@ function anchorUnderMouse() {
 window.mousePressed = function mousePressed(event) {
   // the control panel sits on top of the canvas, so clicks on it are ignored
   if (event.target.tagName !== 'CANVAS') return;
+
+  // Multiple view: a click on an iteration saves it to the library
+  if (isMultipleView()) {
+    const index = iterationUnderMouse();
+    if (index >= 0) library.save(() => captureIteration(index));
+    return;
+  }
 
   // pressed on an anchor: start dragging it (a click without moving removes
   // it, which mouseReleased takes care of)
@@ -1459,6 +1658,7 @@ function showModeControls() {
   anchorCountController.show(!isGlyph);
   randomAnchorsIcon.show(!isGlyph);
   clearController.name(isGlyph ? 'Restore' : 'Clear');
+  iterationsPerRowController.show(isMultipleView());
 }
 
 // There are two "Width" sliders, and only one shows at a time: Fineliner and
@@ -1486,14 +1686,14 @@ function randomizeGrid() {
 
 // A random value for a slider with this { min, max, step } range, snapped to
 // the slider's step, so it is a value you could also have picked by hand.
-function randomSliderValue({ min, max, step }) {
-  return Math.round(random(min, max) / step) * step;
+function randomSliderValue({ min: lowest, max: highest, step: stepSize }) {
+  return Math.round(random(lowest, highest) / stepSize) * stepSize;
 }
 
 // The Splines arrows: a random style, and random values for every slider.
 function randomizeSpline() {
   uiParams.texture = random(Object.values(textureOptions));
-  for (const key of Object.keys(splineRanges)) uiParams[key] = randomSliderValue(splineRanges[key]);
+  for (const settingName of Object.keys(splineRanges)) uiParams[settingName] = randomSliderValue(splineRanges[settingName]);
   refreshPanel();
   restartDrawing();
 }
@@ -1503,8 +1703,8 @@ function randomColor() {
 }
 
 // The distance between two colors, as if r, g and b were x, y and z.
-function colorDistance(first, second) {
-  return dist(first.r, first.g, first.b, second.r, second.g, second.b);
+function colorDistance(firstColor, secondColor) {
+  return dist(firstColor.r, firstColor.g, firstColor.b, secondColor.r, secondColor.g, secondColor.b);
 }
 
 // The Colors arrows: three new colors. Main and Background are picked again
@@ -1541,14 +1741,17 @@ function randomizeAll() {
 
 // Puts everything back the way the sketch opens: every value in the panel,
 // the colors and the guides, with fresh anchors and a running animation.
-// Only the mode stays: in 'Glyph' the anchors come from the (reset) text, in
+// Only the mode and the view (Single or Multiple) stay: in 'Glyph' the anchors come from the (reset) text, in
 // 'Shape' and 'Animation' they are new random ones.
 function resetEverything() {
-  const mode = uiParams.anchorMode;
-  for (const [key, value] of Object.entries(startingParams)) {
-    uiParams[key] = structuredClone(value);
+  const { anchorMode: mode, viewMode, iterationsPerRow } = uiParams;
+  for (const [settingName, value] of Object.entries(startingParams)) {
+    uiParams[settingName] = structuredClone(value);
   }
   uiParams.anchorMode = mode;
+  // the view stays too: Single stays Single, Multiple keeps its size
+  uiParams.viewMode = viewMode;
+  uiParams.iterationsPerRow = iterationsPerRow;
   // both remembered anchor counts start over, and Animation gets its own
   anchorCountPerMode = { Shape: startingParams.anchorCount, Animation: ANIMATION_ANCHOR_COUNT };
   lastGridMode = mode === 'Animation' ? 'Animation' : 'Shape';
@@ -1568,7 +1771,7 @@ function refreshPanel() {
   // is set again here as well
   colorPanelInAccent(panel, uiParams.accentColor);
   // the switches and the Style field are this project's own, so they are told too
-  for (const control of [anchorModeController, paintModeController, textureController]) {
+  for (const control of [anchorModeController, viewModeController, paintModeController, textureController]) {
     control.updateDisplay();
   }
   updateGuideControls();
@@ -1585,47 +1788,123 @@ function refreshPanel() {
 //   inkPicture  the ink layer itself, as a PNG picture
 // Together they are the exact state of the drawing, so a loaded variation
 // continues from where it was saved instead of starting over.
+// In Multiple view, Save Iteration keeps the whole sheet as one variation:
+// { settings, iterations }, with every iteration's anchors, nudges, noise,
+// loop step and ink. Loading it brings the sheet back in Multiple view.
 function captureVariation() {
   // Everything is collected in draw(), at the next frame, right after the
   // ink is drawn: then the saved state and the pictures match exactly.
   return new Promise((resolve) => {
-    saveWaiting = () => {
-      const { showGrid, showAnchors, ...settings } = structuredClone(uiParams);
-      const data = {
-        settings,
-        anchors: anchors.map((anchor) => ({ ...anchor })),
-        noiseSeed: currentNoiseSeed,
-        loopStep,
-        inkPicture: inkToPicture(),
-      };
-      // the SVG file is made now, because only now the sketch holds this
-      // drawing. A Blob keeps it in the browser's memory until it is exported.
-      const svg = new Blob([drawingSVG().join('\n')], { type: 'image/svg+xml' });
-      // the grid and the anchors as they are now, for the library's preview,
-      // and whether they were showing
-      const guides = {
-        grid: gridSVG().join('\n'),
-        anchors: anchorsSVG().join('\n'),
-        showGrid: uiParams.showGrid,
-        showAnchors: uiParams.showAnchors,
-      };
-      resolve({ data, picture: drawingPicture(), svg, guides });
-    };
+    saveWaiting = () => resolve(isMultipleView() ? currentSheet() : currentDrawing());
   });
 }
 
-function applyVariation({ settings, anchors: savedAnchors, noiseSeed: savedSeed, loopStep: savedLoopStep, inkPicture }) {
-  // only values the sketch still knows, in case it has changed since saving
-  for (const key of Object.keys(startingParams)) {
-    if (key === 'showGrid' || key === 'showAnchors') continue;
-    if (key in settings) uiParams[key] = structuredClone(settings[key]);
+// The drawing as it is right now, for the library. In Multiple view it is
+// called with one iteration swapped in (see saveClickedIteration()). It is
+// always saved for Single view, so loading it shows it alone.
+function currentDrawing() {
+  const { showGrid, showAnchors, ...settings } = structuredClone(uiParams);
+  settings.viewMode = 'Single';
+  const data = {
+    settings,
+    anchors: anchors.map((anchor) => ({ ...anchor })),
+    noiseSeed: currentNoiseSeed,
+    loopStep,
+    inkPicture: inkToPicture(),
+  };
+  // the SVG file is made now, because only now the sketch holds this
+  // drawing. A Blob keeps it in the browser's memory until it is exported.
+  const svg = new Blob([drawingSVG().join('\n')], { type: 'image/svg+xml' });
+  // the grid and the anchors as they are now, for the library's preview,
+  // and whether they were showing
+  const guides = {
+    grid: gridSVG().join('\n'),
+    anchors: anchorsSVG().join('\n'),
+    showGrid: uiParams.showGrid,
+    showAnchors: uiParams.showAnchors,
+  };
+  return { data, picture: drawingPicture(), svg, guides };
+}
+
+// Multiple view: the whole sheet of iterations as one variation. Its
+// picture is cut out of the canvas like a single drawing's. It has no
+// guides, so its preview shows no Grid and Anchors buttons.
+function currentSheet() {
+  const { showGrid, showAnchors, ...settings } = structuredClone(uiParams);
+  const data = {
+    settings,
+    iterations: iterations.map((iteration) => ({
+      anchors: iteration.anchors.map((anchor) => ({ ...anchor })),
+      nudges: { ...iteration.nudges },
+      noiseSeed: iteration.noiseSeed,
+      loopStep: iteration.loopStep,
+      inkPicture: inkToPicture(iteration.ink),
+    })),
+  };
+  const svg = new Blob([sheetSVG().join('\n')], { type: 'image/svg+xml' });
+  return { data, picture: drawingPicture(), svg };
+}
+
+// Multiple view: the whole sheet as one SVG file. Every iteration's own SVG
+// file is placed in its spot, shrunk to fit: its width and height (the
+// first line) are swapped for its position and size on the sheet.
+function sheetSVG() {
+  const shapes = [`<rect width="${gridSize}" height="${gridSize}" fill="${svgColor(uiParams.backgroundColor)}"/>`];
+  iterations.forEach((iteration, index) => {
+    withIteration(iteration, () => {
+      const { x, y, size } = iterationPlace(index);
+      const file = drawingSVG();
+      const place = `x="${round(x, SVG_DECIMALS)}" y="${round(y, SVG_DECIMALS)}" width="${round(size, SVG_DECIMALS)}" height="${round(size, SVG_DECIMALS)}"`;
+      file[0] = file[0].replace(/width="[^"]*" height="[^"]*"/, place);
+      shapes.push(...file);
+    });
+  });
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${gridSize}" height="${gridSize}" viewBox="0 0 ${gridSize} ${gridSize}">`,
+    ...shapes,
+    '</svg>',
+  ];
+}
+
+// Multiple view: a click on an iteration saves just that one. The library
+// calls this instead of captureVariation(); draw() does the work at the
+// next frame, see saveClickedIteration().
+function captureIteration(index) {
+  return new Promise((resolve) => {
+    iterationSaveWaiting = { index, resolve };
+  });
+}
+
+// Draws the clicked iteration alone and full size, on the slanted grid
+// like in Single view, and saves it from there. draw() paints the whole
+// frame over it afterwards, so it never shows on screen.
+function saveClickedIteration() {
+  const { index, resolve } = iterationSaveWaiting;
+  iterationSaveWaiting = null;
+  const iteration = iterations[index];
+  if (!iteration) return;
+  withIteration(iteration, () => {
+    background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+    push();
+    translate(gridLeft(), gridTop());
+    slantGrid();
+    drawInkLayer();
+    pop();
+    resolve(currentDrawing());
+  });
+}
+
+function applyVariation(data) {
+  // a whole sheet of iterations, saved in Multiple view
+  if (data.iterations) {
+    applySheet(data);
+    return;
   }
-  // Shape and Animation remember their own anchor count, so the loaded one
-  // is stored for its mode
-  if (uiParams.anchorMode !== 'Glyph') {
-    lastGridMode = uiParams.anchorMode;
-    anchorCountPerMode[lastGridMode] = uiParams.anchorCount;
-  }
+  const { settings, anchors: savedAnchors, noiseSeed: savedSeed, loopStep: savedLoopStep, inkPicture } = data;
+  applySettings(settings);
+  // one drawing always comes back alone, also if it was saved before the
+  // sketch had a Multiple view
+  uiParams.viewMode = 'Single';
 
   // the saved anchors come back exactly as they were, drift and all, also in
   // Glyph mode, so a shape you changed by hand comes back changed
@@ -1638,8 +1917,47 @@ function applyVariation({ settings, anchors: savedAnchors, noiseSeed: savedSeed,
   currentNoiseSeed = savedSeed;
   noiseSeed(currentNoiseSeed);
   loopStep = savedLoopStep;
+  inkLoadNumber += 1;
   pictureToInk(inkPicture);
   // paused, so you see it exactly as it was saved. Space continues drawing.
+  setPaused(true);
+  refreshPanel();
+}
+
+// The saved settings back in the panel: only values the sketch still knows,
+// in case it has changed since saving, and never whether the guides show.
+function applySettings(settings) {
+  for (const settingName of Object.keys(startingParams)) {
+    if (settingName === 'showGrid' || settingName === 'showAnchors') continue;
+    if (settingName in settings) uiParams[settingName] = structuredClone(settings[settingName]);
+  }
+  // Shape and Animation remember their own anchor count, so the loaded one
+  // is stored for its mode
+  if (uiParams.anchorMode !== 'Glyph') {
+    lastGridMode = uiParams.anchorMode;
+    anchorCountPerMode[lastGridMode] = uiParams.anchorCount;
+  }
+}
+
+// A whole sheet comes back in Multiple view, every iteration exactly as it
+// was saved, paused like a single drawing. The first iteration's anchors
+// become yours, so Iterate, Restart and the rest start from there.
+function applySheet({ settings, iterations: savedIterations }) {
+  applySettings(settings);
+  uiParams.viewMode = 'Multiple';
+  inkLoadNumber += 1;
+  iterations = savedIterations.map((saved) => {
+    const iteration = {
+      ink: new Float32Array(gridSize * gridSize),
+      anchors: saved.anchors.map((anchor) => ({ ...anchor })),
+      nudges: { ...saved.nudges },
+      noiseSeed: saved.noiseSeed,
+      loopStep: saved.loopStep,
+    };
+    pictureToInk(saved.inkPicture, iteration.ink);
+    return iteration;
+  });
+  anchors = savedIterations[0].anchors.map((anchor) => ({ ...anchor }));
   setPaused(true);
   refreshPanel();
 }
@@ -1654,35 +1972,36 @@ function gridSizedContext() {
   return pictureCanvas.getContext('2d');
 }
 
-// The ink layer as a PNG picture, written as text (a "data URL"). Each
-// pixel keeps its ink in its opacity: 0 for no ink, 255 for full.
-function inkToPicture() {
+// An ink layer as a PNG picture, written as text (a "data URL"). Each
+// pixel keeps its ink in its opacity: 0 for no ink, 255 for full. Without
+// `source` it is the sketch's own ink layer.
+function inkToPicture(source = ink) {
   const context = gridSizedContext();
-  const pixels = context.createImageData(gridSize, gridSize);
+  const pixelData = context.createImageData(gridSize, gridSize);
   // every pixel takes four places in the list: red, green, blue, opacity
-  for (let index = 0; index < ink.length; index++) {
-    pixels.data[index * 4 + 3] = ink[index] * 255;
+  for (let index = 0; index < source.length; index++) {
+    pixelData.data[index * 4 + 3] = source[index] * 255;
   }
-  context.putImageData(pixels, 0, 0);
+  context.putImageData(pixelData, 0, 0);
   return context.canvas.toDataURL('image/png');
 }
 
-// Reads a picture made by inkToPicture() back into the ink layer. The
-// browser needs a moment to unpack a picture, so the ink is empty until it
-// is ready; the drawing is paused meanwhile.
-function pictureToInk(inkPicture) {
-  ink.fill(0);
+// Reads a picture made by inkToPicture() back into an ink layer: `target`,
+// or without it the sketch's own. The browser needs a moment to unpack a
+// picture, so the ink is empty until it is ready; the drawing is paused
+// meanwhile.
+function pictureToInk(inkPicture, target = ink) {
+  target.fill(0);
+  const loadNumber = inkLoadNumber;
   const picture = new Image();
-  inkPictureLoading = picture;
   picture.onload = () => {
     // another variation was loaded, or the drawing restarted, in the meantime
-    if (inkPictureLoading !== picture) return;
-    inkPictureLoading = null;
+    if (loadNumber !== inkLoadNumber) return;
     const context = gridSizedContext();
     context.drawImage(picture, 0, 0);
-    const pixels = context.getImageData(0, 0, gridSize, gridSize).data;
-    for (let index = 0; index < ink.length; index++) {
-      ink[index] = pixels[index * 4 + 3] / 255;
+    const pixelData = context.getImageData(0, 0, gridSize, gridSize).data;
+    for (let index = 0; index < target.length; index++) {
+      target[index] = pixelData[index * 4 + 3] / 255;
     }
   };
   picture.src = inkPicture;
@@ -1729,6 +2048,17 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
     if (mode === 'Glyph') updateFontAnchors();
     else randomAnchors();
   });
+  // one drawing in the middle, or several iterations at once. Switching
+  // starts the drawing over.
+  viewModeController = addSwitch(modes, uiParams, 'viewMode', ['Single', 'Multiple'], () => {
+    showModeControls();
+    restartDrawing();
+  });
+  // Multiple only: how many iterations per row, so 2 gives 2 × 2
+  iterationsPerRowController = modes
+    .add(uiParams, 'iterationsPerRow', iterationsPerRowRange.min, iterationsPerRowRange.max, iterationsPerRowRange.step)
+    .name('Per Row')
+    .onChange(restartDrawing);
   // text and size sit right below the switch, since they belong to 'Glyph'
   glyphControllers = moveTextControlsTo(modes);
 
@@ -1756,11 +2086,11 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   // its name follows the mode, see showModeControls()
   clearController = anchorsFolder.add({ clearGrid }, 'clearGrid').name('Clear');
 
-  const spline = gui.addFolder('Splines');
-  addRandomizeIcon(spline, randomizeSpline);
+  const splinesFolder = gui.addFolder('Splines');
+  addRandomizeIcon(splinesFolder, randomizeSpline);
   // the Style field, without a name in front: click the left half for the
   // style before, the right half for the next
-  textureController = addCycler(spline, uiParams, 'texture', textureOptions, {
+  textureController = addCycler(splinesFolder, uiParams, 'texture', textureOptions, {
     onChange: () => {
       showWidthSlider();
       restartDrawing();
@@ -1768,11 +2098,11 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   });
   // ink along the curve or inside it. Switching starts the drawing over, so
   // the old ink doesn't mix with the new.
-  paintModeController = addSwitch(spline, uiParams, 'paintMode', ['Line', 'Fill'], restartDrawing);
+  paintModeController = addSwitch(splinesFolder, uiParams, 'paintMode', ['Line', 'Fill'], restartDrawing);
   // each slider takes its min, max and step from `splineRanges`
-  const splineSlider = (key) => {
-    const { min, max, step } = splineRanges[key];
-    return spline.add(uiParams, key, min, max, step);
+  const splineSlider = (settingName) => {
+    const range = splineRanges[settingName];
+    return splinesFolder.add(uiParams, settingName, range.min, range.max, range.step);
   };
   lineWidthController = splineSlider('textureWeight').name('Width').onChange(restartDrawing);
   // below 1 the shapes leave a gap to their neighbours

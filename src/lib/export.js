@@ -15,8 +15,8 @@ export const timestamp = () => {
   const pad = (value) => String(value).padStart(2, '0');
 
   //getMonth() counts from zero, so January is 0
-  const year = String(now.getFullYear()).slice(-2);
-  const date = `${year}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const yearDigits = String(now.getFullYear()).slice(-2);
+  const date = `${yearDigits}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
 
   return `${date}-${time}`;
@@ -44,7 +44,7 @@ const LINK_LIFETIME = 1000;
 // `filename`. Used by the library to export saved variations. `file` is
 // either a data URL (text starting with "data:", like a canvas picture) or
 // a Blob (a file kept in the browser's memory).
-export function downloadFile(file, filename) {
+export function saveToDownloads(file, filename) {
   const isBlob = file instanceof Blob;
   const link = document.createElement('a');
   link.href = isBlob ? URL.createObjectURL(file) : file;

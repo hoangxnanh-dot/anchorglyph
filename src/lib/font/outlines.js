@@ -24,8 +24,8 @@ export function placeAlongOutline(outline, spacing, offset = 0) {
   return spots;
 }
 
-export function placeAtDistance(outline, distance) {
-  return spotAt(outline, measureOutline(outline), distance);
+export function placeAtDistance(outline, along) {
+  return spotAt(outline, measureOutline(outline), along);
 }
 
 export function getOutlineLength(outline) {
@@ -44,11 +44,11 @@ function measureOutline(outline) {
   return distances;
 }
 
-// The spot `distance` pixels along: lerp() between the two points around it.
-function spotAt(outline, distances, distance) {
+// The spot `along` pixels along: lerp() between the two points around it.
+function spotAt(outline, distances, along) {
   //keeps going round: negative distances count backwards
   const outlineLength = distances[distances.length - 1];
-  const distanceOnLoop = ((distance % outlineLength) + outlineLength) % outlineLength;
+  const distanceOnLoop = ((along % outlineLength) + outlineLength) % outlineLength;
 
   let index = 0;
   while (distances[index + 1] < distanceOnLoop) index++;
