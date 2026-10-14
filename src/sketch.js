@@ -34,7 +34,9 @@
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
 // Randomize All       New grid, anchors, spline, colors, drift and speed at once.
-// Reconnect           Keep the same cells, connect them in a new order.
+// Iterate             Keep the same cells, connect them in a new order.
+// Clear / Restore     Remove every anchor. In 'Glyph' it is called Restore
+//                     and brings back the anchors of the text instead.
 //
 // Modes: Glyph | Shape | Animation
 //                     'Glyph' uses the anchor points of the text, read from the font file.
@@ -44,13 +46,15 @@
 //                     the grid, or the anchors and their numbers.
 // H – Hide Guides     Hide or show the grid and the anchors together.
 // G – Hide UI         Hide or show the control panel and the library.
+// T – Toggle folders  Close every folder in the control panel, or open them
+//                     all again if they are all closed. Modes stays open.
 // Space – Pause/Play  Pause or continue the animation.
 // R – Randomize All   Randomize EVERYTHING.
-// C – Reset           Every setting back to how the sketch opens (same as
-//                     the Reset button). The mode stays.
+// C – Reset All       Every setting back to how the sketch opens (same as
+//                     the Reset All button). The mode stays.
 // Left / Right        New random anchors (same as the Anchors arrows), not in 'Glyph'.
-// S – Save Variation  Keep the drawing in the library (same as the library's
-//                     Save Variation button).
+// S – Save Iteration  Keep the drawing in the library (same as the library's
+//                     Save Iteration button).
 //
 // The library on the left keeps saved variations for this page visit: the
 // drawing itself, the anchors and every setting in the panel. Load one to
@@ -58,7 +62,7 @@
 // from it. Select several to delete or export them at once. Reloading the
 // page clears the library. See src/lib/library.js.
 //
-// Clearing, reconnecting or changing anchors always restarts the drawing, even
+// Clearing, iterating or changing anchors always restarts the drawing, even
 // if it was paused, so the lines keep being drawn.
 //
 // Note: this is p5 version 2. Tutorials that use `preload()` are written for
@@ -67,7 +71,7 @@
 import p5 from 'p5';
 import { createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, colorPanelInAccent } from './lib/gui.js';
 import { createLibrary } from './lib/library.js';
-import { gridSize, backgroundColor, foregroundColor, accentColor, startingText } from './config.js';
+import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle } from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
@@ -91,8 +95,10 @@ const STARTING_ROWS = 20;
 // move in whole steps, since there is no half a column. The arrows on the
 // Grid folder pick at least RANDOM_GRID_MIN, so the grid never ends up as
 // one or two big cells.
+// 39 puts the starting 20 exactly in the middle of the sliders (19 steps
+// on either side), so their handles line up with the Slant slider below.
 const GRID_MIN = 1;
-const GRID_MAX = 40;
+const GRID_MAX = 39;
 const GRID_STEP = 1;
 const RANDOM_GRID_MIN = 3;
 
@@ -161,7 +167,7 @@ const uiParams = {
   accentColor,
 };
 
-// A copy of every value as the sketch opens with it, for "Reset". It is a
+// A copy of every value as the sketch opens with it, for "Reset All". It is a
 // real copy (structuredClone), so changing a color later doesn't change it.
 const startingParams = structuredClone(uiParams);
 
@@ -324,12 +330,15 @@ let inkImage;
 // panel controls the code changes or hides after they are made.
 let panel;
 let library;
+let stageTitle;
+let playbackControls;
 let anchorModeController;
 let glyphControllers = [];
 let columnsController;
 let rowsController;
 let anchorCountController;
 let randomAnchorsIcon;
+let clearController;
 let gridEye;
 let anchorsEye;
 let lineWidthController;
@@ -463,8 +472,15 @@ function shuffleOrder() {
   restartDrawing();
 }
 
-// Removes every anchor but stays in the current mode.
+// The Clear button. In 'Shape' and 'Animation' it removes every anchor but
+// stays in the current mode. In 'Glyph' it is called Restore: it builds the
+// anchors again from the text in "Type here", undoing anchors you moved,
+// added or removed by hand.
 function clearGrid() {
+  if (uiParams.anchorMode === 'Glyph') {
+    updateFontAnchors();
+    return;
+  }
   anchors = [];
   restartDrawing();
 }
@@ -492,7 +508,7 @@ function resizeGrid() {
 }
 
 // Clears the ink and puts every anchor back in its cell.
-// It also un-pauses: otherwise clearing or reconnecting while paused would leave
+// It also un-pauses: otherwise clearing or iterating while paused would leave
 // an empty canvas with nothing being drawn onto it.
 function restartDrawing() {
   setPaused(false);
@@ -1392,19 +1408,35 @@ window.addEventListener('keydown', (event) => {
     // same as the "Randomize All" button: grid, anchors, spline, colors, drift and speed
     randomizeAll();
   } else if (event.key.toLowerCase() === 'c') {
-    // same as the "Reset" button: every setting back to how the sketch opens
+    // same as the "Reset All" button: every setting back to how the sketch opens
     resetEverything();
   } else if (event.key.toLowerCase() === 's') {
-    // same as the library's "Save Variation" button, flash and slide included
+    // same as the library's "Save Iteration" button, flash and slide included
     library.save();
+  } else if (event.key.toLowerCase() === 't') {
+    toggleAllFolders();
   } else if (event.key === 'g') {
-    // src/lib/gui.js hides the control panel on g; the library goes with it
+    // src/lib/gui.js hides the control panel on g; the library and the
+    // title above the grid go with it
     library.toggle();
+    stageTitle.hidden = !stageTitle.hidden;
   }
 });
 
+// The T key: if any folder in the control panel is open, every folder
+// closes; if all are closed, they all open. lil-gui marks a closed folder
+// with the class lil-closed. Modes always stays open, so it is skipped.
+function toggleAllFolders() {
+  const folders = panel.folders.filter((folder) => !folder.domElement.classList.contains('lil-always-open'));
+  const anyOpen = folders.some((folder) => !folder.domElement.classList.contains('lil-closed'));
+  // openAnimated() slides each folder open or shut, like a click on its title
+  for (const folder of folders) folder.openAnimated(!anyOpen);
+}
+
 function setPaused(paused) {
   animationPaused = paused;
+  // the Play/Pause button in the panel shows what a click does next
+  if (playbackControls) playbackControls.showPaused(paused);
 }
 
 function togglePause() {
@@ -1419,12 +1451,14 @@ function updateGuideControls() {
 
 // The text and size controls only do something in 'Glyph' mode, so the
 // panel only shows them then. In 'Glyph' the text sets the anchors, so the
-// Anchor Points slider and the anchors' Randomize arrows are hidden there.
+// Anchor Points slider and the anchors' Randomize arrows are hidden there,
+// and Clear becomes Restore.
 function showModeControls() {
   const isGlyph = uiParams.anchorMode === 'Glyph';
   for (const controller of glyphControllers) controller.show(isGlyph);
   anchorCountController.show(!isGlyph);
   randomAnchorsIcon.show(!isGlyph);
+  clearController.name(isGlyph ? 'Restore' : 'Clear');
 }
 
 // There are two "Width" sliders, and only one shows at a time: Fineliner and
@@ -1526,7 +1560,7 @@ function resetEverything() {
 }
 
 // The panel doesn't notice values changed in code, so every control is told
-// to show its value again. Used by "Reset", the Randomize arrows and by
+// to show its value again. Used by "Reset All", the Randomize arrows and by
 // loading from the library.
 function refreshPanel() {
   panel.controllersRecursive().forEach((controller) => controller.updateDisplay());
@@ -1682,8 +1716,13 @@ window.windowResized = function windowResized() {
 
 // This template's controls, added below the shared ones from src/lib/gui.js.
 function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
-  // the first folder, so the mode is chosen before anything else
+  // the first folder, so the mode is chosen before anything else. It always
+  // stays open: its title is only a headline (see .lil-always-open in
+  // index.html), and the T key leaves it alone.
   const modes = gui.addFolder('Modes');
+  modes.domElement.classList.add('lil-always-open');
+  // the Tab key skips its title, so Enter can't fold it away either
+  modes.$title.tabIndex = -1;
   anchorModeController = addSwitch(modes, uiParams, 'anchorMode', ['Glyph', 'Shape', 'Animation'], (mode) => {
     swapAnchorCount(mode);
     showModeControls();
@@ -1692,6 +1731,10 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   });
   // text and size sit right below the switch, since they belong to 'Glyph'
   glyphControllers = moveTextControlsTo(modes);
+
+  // the Controls headline between the modes and the folders, with
+  // Randomize All and Reset All below it
+  addControlsSection(gui);
 
   const grid = gui.addFolder('Grid');
   // the eye and the Randomize arrows sit on the right of the folder's title
@@ -1709,8 +1752,9 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
     .add(uiParams, 'anchorCount', anchorCountRange.min, anchorCountRange.max, anchorCountRange.step)
     .name('Anchor Points')
     .onChange(changeAnchorCount);
-  anchorsFolder.add({ shuffleOrder }, 'shuffleOrder').name('Reconnect');
-  anchorsFolder.add({ clearGrid }, 'clearGrid').name('Clear');
+  anchorsFolder.add({ shuffleOrder }, 'shuffleOrder').name('Iterate');
+  // its name follows the mode, see showModeControls()
+  clearController = anchorsFolder.add({ clearGrid }, 'clearGrid').name('Clear');
 
   const spline = gui.addFolder('Splines');
   addRandomizeIcon(spline, randomizeSpline);
@@ -1747,21 +1791,129 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   driftFolder.add(uiParams, 'driftReach', driftReachRange.min, driftReachRange.max, driftReachRange.step).name('Drift');
   driftFolder.add(uiParams, 'speed', speedRange.min, speedRange.max, speedRange.step).name('Speed');
 
-  const playback = gui.addFolder('Playback');
-  playback.add({ togglePause }, 'togglePause').name('Pause/Play');
-  playback.add({ restartDrawing }, 'restartDrawing').name('Restart');
-  playback.add({ randomizeAll }, 'randomizeAll').name('Randomize All');
-  playback.add({ resetEverything }, 'resetEverything').name('Reset');
+
+  // the Playback headline at the end, with Restart and Play/Pause on it
+  playbackControls = addPlaybackSection(gui);
+
+  // A closed folder lights up as a whole when the mouse is over it (see
+  // index.html), so a click anywhere in it opens it, not only on its title.
+  // Clicks on the title itself are already handled by lil-gui.
+  for (const folder of gui.folders) {
+    folder.domElement.addEventListener('click', (event) => {
+      const isClosed = folder.domElement.classList.contains('lil-closed');
+      if (isClosed && event.target === folder.domElement) folder.openAnimated();
+    });
+  }
+
+  // every folder starts closed, so the panel opens short and tidy. Modes
+  // always stays open.
+  for (const folder of gui.folders) {
+    if (!folder.domElement.classList.contains('lil-always-open')) folder.close();
+  }
 
   // hides the controls that the current mode doesn't use
   showModeControls();
 }
 
+// The Controls headline in the panel, below the mode switch and above the
+// Grid folder, styled like the panel's own headline. Below it, Randomize All
+// and Reset All side by side. lil-gui has no headlines of its own, so these
+// are plain page elements, added in the panel where the folders go. Their
+// look is in index.html, under "the Controls headline".
+function addControlsSection(gui) {
+  const heading = document.createElement('div');
+  heading.className = 'panel-section-title';
+  heading.textContent = 'Controls';
+
+  const actions = document.createElement('div');
+  actions.className = 'panel-section-actions';
+  const buttons = [
+    ['Randomize All', randomizeAll],
+    ['Reset All', resetEverything],
+  ];
+  for (const [label, action] of buttons) {
+    const button = document.createElement('button');
+    button.textContent = label;
+    button.addEventListener('click', () => action());
+    actions.appendChild(button);
+  }
+  gui.$children.append(heading, actions);
+}
+
+// The Playback icons: line drawings in the text color, 14 pixels wide, like
+// the icons in the panel and the library.
+// Restart: an arrow turning back on itself.
+const RESTART_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
+// Pause: two upright bars. Shown while the drawing runs.
+const PAUSE_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+// Play: a triangle pointing right. Shown while the drawing is paused.
+const PLAY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+
+// The Playback headline at the end of the panel, styled like Controls, with
+// Restart and Play/Pause as icons on its right. It gives back
+// showPaused(paused), which swaps the Play/Pause icon; setPaused() calls it.
+function addPlaybackSection(gui) {
+  const heading = document.createElement('div');
+  heading.className = 'panel-section-title';
+  heading.append('Playback');
+
+  // `label` shows when the mouse rests on a button, and screen readers read it
+  const makeIconButton = (icon, label, action) => {
+    const button = document.createElement('button');
+    button.className = 'panel-icon-button';
+    button.innerHTML = icon;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.addEventListener('click', () => action());
+    return button;
+  };
+  const restartButton = makeIconButton(RESTART_ICON, 'Restart', restartDrawing);
+  const pauseButton = makeIconButton(PAUSE_ICON, 'Pause', togglePause);
+  const icons = document.createElement('div');
+  icons.className = 'panel-section-icons';
+  icons.append(restartButton, pauseButton);
+  heading.appendChild(icons);
+  gui.$children.appendChild(heading);
+
+  // while the drawing runs, the button offers to pause it; while it is
+  // paused, to play it again
+  const showPaused = (paused) => {
+    const label = paused ? 'Play' : 'Pause';
+    pauseButton.innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
+    pauseButton.title = label;
+    pauseButton.setAttribute('aria-label', label);
+  };
+  showPaused(animationPaused);
+  return { showPaused };
+}
+
+// The title bar at the top of the middle, between the library and the
+// control panel, in the style of the Library title. Its text is
+// projectTitle from src/config.js; its look is in index.html, under "the
+// title above the grid".
+function createStageTitle() {
+  const title = document.createElement('div');
+  title.className = 'stage-title';
+  title.textContent = projectTitle;
+  document.body.appendChild(title);
+  return title;
+}
+
+// The panels size themselves around the grid (see --panel-width in
+// index.html), so they are told how big the grid is.
+document.documentElement.style.setProperty('--grid-size', `${gridSize}px`);
+
 // Builds the control panel and the library, then starts p5. p5 looks for
 // the setup() and draw() you defined above and runs them.
 library = createLibrary({ capture: captureVariation, apply: applyVariation });
+stageTitle = createStageTitle();
 panel = createGUI({
   params: uiParams,
+  // the headline at the top of the panel, above the mode switch
+  title: 'Modes',
   // no export buttons in the panel: the s key saves to the library, and
   // the library exports saved variations as PNG or SVG
   exportPNG: false,
@@ -1771,4 +1923,7 @@ panel = createGUI({
   onHelpersToggle: updateGuideControls,
   addControls,
 });
+// the Controls title is only a headline (see index.html), so the Tab key
+// skips it and Enter can't fold the panel away
+panel.$title.tabIndex = -1;
 new p5();

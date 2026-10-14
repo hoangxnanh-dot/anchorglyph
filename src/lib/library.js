@@ -4,7 +4,7 @@
 // can come back to one later, change it, or use it as the starting point
 // for a new one.
 //
-//   Save Variation   adds what is on screen now to the top of the list: the
+//   Save Iteration   adds what is on screen now to the top of the list: the
 //   (or the s key)   drawing itself, the anchors and every setting
 //   click a picture  opens a large preview. Escape, the x or a click beside
 //                    the picture closes it again. On its bottom right corner:
@@ -14,7 +14,7 @@
 //                    brings the variation back exactly as it was saved,
 //                    paused. Space continues drawing from there.
 //   Delete (x icon, top right of the picture)
-//                    removes it
+//                    removes it right away, without asking first
 //   the name         click it to type a new one
 //   the checkbox     selects a variation. Shift-click a second checkbox to
 //                    select everything in between.
@@ -90,15 +90,15 @@ export function createLibrary({ capture, apply }) {
 
   const saveButton = document.createElement('button');
   saveButton.className = 'library-save';
-  saveButton.textContent = 'Save Variation';
+  saveButton.textContent = 'Save Iteration';
   saveButton.addEventListener('click', saveCurrent);
 
+  // these two only do something when there is at least one variation
+  const selectAllButton = makeButton('Select all', selectAll);
+  const deselectAllButton = makeButton('Deselect all', deselectAll);
   const selectionActions = document.createElement('div');
   selectionActions.className = 'library-selection-actions';
-  selectionActions.append(
-    makeButton('Select all', selectAll),
-    makeButton('Deselect all', deselectAll),
-  );
+  selectionActions.append(selectAllButton, deselectAllButton);
 
   // these only do something when at least one variation is selected
   const deleteSelectedButton = makeButton('Delete', deleteSelected);
@@ -111,7 +111,7 @@ export function createLibrary({ capture, apply }) {
   const emptyMessage = document.createElement('p');
   emptyMessage.className = 'library-empty';
   // \n starts a new line (the message keeps line breaks, see index.html)
-  emptyMessage.textContent = 'Nothing saved yet.\n"Save Variation" keeps the drawing for this visit only.';
+  emptyMessage.textContent = 'Nothing saved yet.\n\n»Save Iteration« keeps the drawing for this visit only.';
 
   const list = document.createElement('ul');
   list.className = 'library-list';
@@ -257,16 +257,14 @@ export function createLibrary({ capture, apply }) {
     showList();
   }
 
+  // Deleting happens right away, without the browser asking first.
   function deleteVariation(variation) {
-    if (!confirm(`Delete "${variation.name}"? This can't be undone.`)) return;
     removeVariations([variation]);
   }
 
   function deleteSelected() {
     const selected = selectedVariations();
     if (selected.length === 0) return;
-    const description = selected.length === 1 ? `"${selected[0].name}"` : `${selected.length} variations`;
-    if (!confirm(`Delete ${description}? This can't be undone.`)) return;
     removeVariations(selected);
   }
 
@@ -471,8 +469,10 @@ export function createLibrary({ capture, apply }) {
     list.replaceChildren(...variations.map(makeItem));
     const isEmpty = variations.length === 0;
     emptyMessage.hidden = !isEmpty;
-    selectionActions.hidden = isEmpty;
-    selectedActions.hidden = isEmpty;
+    // the buttons always show; with nothing saved, Select all and Deselect
+    // all are greyed out, like Delete, PNG and SVG while nothing is selected
+    selectAllButton.disabled = isEmpty;
+    deselectAllButton.disabled = isEmpty;
     updateSelectionDisplay();
   }
 

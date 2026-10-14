@@ -86,6 +86,7 @@ them.
 | <kbd>Space</kbd> | Pause or resume the animation |
 | <kbd>r</kbd> | Restart the animation |
 | <kbd>c</kbd> | Reset every setting to how the sketch opens |
+| <kbd>t</kbd> | Close every folder in the panel, or open them all again |
 
 Press <kbd>g</kbd> before taking a screenshot to get the canvas on its own.
 In the What Da Font Generator, click **Glyph** in the Modes folder at the top
@@ -135,7 +136,7 @@ just the starting values.
 
 ### Saving stills
 
-Press <kbd>s</kbd> or click **Save Variation** to keep the drawing in the library
+Press <kbd>s</kbd> or click **Save Iteration** to keep the drawing in the library
 on the left. Select it there and click **PNG** or **SVG**; the file
 lands in your **Downloads** folder.
 

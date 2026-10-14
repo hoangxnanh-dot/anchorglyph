@@ -24,9 +24,35 @@
         display: block;
       }
 
-      /* how wide the library (left) and the control panel (right) are */
+      /* How wide the library (left) and the control panel (right) are. They
+         share the room the grid leaves in the window, minus a gap on each
+         side of the grid, so they grow and shrink with the window. They never
+         get narrower than the smallest width or wider than the largest.
+         --grid-size is set by src/sketch.js from gridSize in src/config.js. */
       :root {
-        --panel-width: 300px;
+        --panel-gap: 24px;
+        --panel-min-width: 220px;
+        --panel-max-width: 400px;
+        --panel-width: clamp(
+          var(--panel-min-width),
+          calc((100vw - var(--grid-size, 800px)) / 2 - var(--panel-gap)),
+          var(--panel-max-width)
+        );
+        /* the room between the panels' left and right edges and what is in
+           them: titles, controls, buttons and cards */
+        --panel-padding: 32px;
+        /* the room below the controls at the end of each folder */
+        --group-padding: 16px;
+        /* the room between a folder's title and its first control */
+        --group-title-gap: 0px;
+        /* the room between the line above a folder and its title */
+        --title-line-gap: 4px;
+        /* the gap between a panel's title (Controls, Library) and what
+           comes first below it */
+        --title-gap: 8px;
+        /* the room the folder arrows (▾ ▸) take in front of their titles,
+           including the space between arrow and text */
+        --arrow-width: 24px;
       }
 
       /* Every button in both panels and the preview has the same size: this
@@ -47,6 +73,17 @@
         --width: var(--panel-width);
       }
 
+      /* The part of each panel that scrolls when it gets long: the folders
+         in the control panel, the cards in the library. A scrollbar takes
+         room from what is inside, which made the padding seem to change as
+         soon as one appeared. "stable" keeps that room free on the right all
+         the time, scrollbar or not. The left side is left alone, so what is
+         inside lines up with the panel titles above. */
+      .lil-gui.lil-root > .lil-children,
+      .library-list {
+        scrollbar-gutter: stable;
+      }
+
       /* the size of the text in the control panel. Every folder sets its
          own sizes, so this has to apply to all of them, not only the panel. */
       .lil-gui {
@@ -54,6 +91,8 @@
         --input-font-size: 14px;
         /* the height of each row, raised with the text so it still fits */
         --widget-height: 24px;
+        /* lil-gui's room left and right of every title and control */
+        --padding: var(--panel-padding);
       }
 
       /* the buttons in the control panel (Reconnect, Clear, the switches,
@@ -88,29 +127,144 @@
       .lil-gui > .lil-title {
         --title-height: 36px;
       }
-      /* Controls and Library, the headlines of the two panels, are a bit
-         bigger than the folder titles */
+      /* Modes and Library, the headlines of the two panels, are a bit
+         bigger than the folder titles. Both get exactly the same box: 36px
+         tall, with a line as tall as the box, so the text sits at the same
+         height in both. */
       .lil-gui.lil-root > .lil-title,
       .library-title {
         font-size: 22px;
+        height: 36px;
+        line-height: 36px;
+        padding: 0 var(--panel-padding);
       }
-      /* Controls is only a headline: clicking it doesn't fold the panel
-         away, and it has no arrow in front */
+      /* Modes is only a headline, like Library: clicking it doesn't fold
+         the panel away, and it has no arrow in front */
       .lil-gui.lil-root > .lil-title {
         pointer-events: none;
       }
       .lil-gui.lil-root > .lil-title::before {
         content: none;
       }
-
-      /* a folder's title keeps the line above it, which separates the
-         folders, but loses the one below it, between title and controls */
-      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
-        border-bottom-color: transparent;
+      /* The Modes folder always stays open and has no title of its own:
+         the panel's headline above it already says Modes. */
+      .lil-gui.lil-always-open > .lil-title {
+        display: none;
       }
-      /* a little more room at the end of each folder, before the next one */
+
+      /* the Controls headline: between the modes and the folders, it looks
+         like the panel's headline at the top. Randomize All and Reset All
+         sit side by side below it, lined up with the controls. */
+      .panel-section-title {
+        /* the title on the left, icons (Playback) on the right */
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 36px;
+        line-height: 36px;
+        padding: 0 var(--panel-padding) 0 calc(var(--panel-padding) + var(--arrow-width));
+        background: var(--title-background-color);
+        color: var(--title-text-color);
+        font-family: 'SpaceGrotesk-Bold', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      .panel-section-actions {
+        display: flex;
+        gap: 4px;
+        padding: var(--title-gap) var(--panel-padding) var(--title-gap) calc(var(--panel-padding) + var(--arrow-width));
+      }
+      .panel-section-actions button {
+        flex: 1;
+        height: var(--button-height);
+        padding: 0 var(--button-padding);
+        background: var(--widget-color);
+        border-radius: var(--widget-border-radius);
+      }
+      .panel-section-actions button:hover {
+        background: var(--hover-color);
+      }
+      /* Restart and Play/Pause on the right of the Playback headline:
+         square, with the icon in the middle */
+      .panel-section-icons {
+        display: flex;
+        gap: 4px;
+      }
+      .panel-section-icons .panel-icon-button {
+        width: var(--button-height);
+        height: var(--button-height);
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--widget-color);
+        border-radius: var(--widget-border-radius);
+      }
+      .panel-section-icons .panel-icon-button:hover {
+        background: var(--hover-color);
+      }
+
+      /* The line between folders: lil-gui draws it on the title itself,
+         right against the text. Here the title loses its lines, and the
+         folder gets the line on its top edge instead. A margin above the
+         title keeps some room between the line and the title (see
+         --title-line-gap). */
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
+        border-color: transparent;
+        margin-top: var(--title-line-gap);
+      }
+      /* The arrow (▾ or ▸) in front of a folder title hangs out to the left,
+         into the padding, so the title's text starts exactly where the
+         Controls title does. The arrow box is pulled back by its own width;
+         the arrow sits at its left, so a wider box means more space between
+         the arrow and the text. */
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title::before {
+        width: var(--arrow-width);
+        margin-left: calc(-1 * var(--arrow-width));
+        padding-right: 0;
+      }
+      /* So the arrows still keep the panel padding from the left edge, the
+         control panel has the arrows' width more room on the left: the
+         Controls title, the folder titles and every control move in by it,
+         and all of them still line up. */
+      .lil-gui.lil-root > .lil-title,
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title,
+      .lil-gui .lil-controller {
+        padding-left: calc(var(--panel-padding) + var(--arrow-width));
+      }
+      /* every folder, open or closed: the line on top, and the group
+         padding below its end */
       .lil-gui.lil-root > .lil-children > .lil-gui {
-        padding-bottom: 2px;
+        border-top: 1px solid var(--widget-color);
+        padding: 0 0 var(--group-padding);
+      }
+      /* the first folder (Modes) has nothing above it to separate it from,
+         so its line is invisible, and instead of the room below the line it
+         gets the same small gap below the Controls title as the library has
+         between its title and the Save Iteration button */
+      .lil-gui.lil-root > .lil-children > .lil-gui:first-child {
+        border-top-color: transparent;
+        padding-top: var(--title-gap);
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui:first-child > .lil-title {
+        margin-top: 0;
+      }
+      /* A closed folder lights up as a whole when the mouse is over it, from
+         the line down to the next folder, not only its title. A click
+         anywhere in it opens it (see src/sketch.js). The title doesn't light
+         up on its own then, so the whole section is one even color. */
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed:hover {
+        background: var(--title-background-color);
+        cursor: pointer;
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed > .lil-title:hover {
+        background: none;
+        opacity: 1;
+      }
+      /* room between an open folder's title and its first control */
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-children {
+        padding-top: var(--group-title-gap);
       }
 
       /* the tracking (space between letters) of every text in both panels
@@ -152,10 +306,31 @@
         display: none;
       }
       .library-title {
-        padding: 6px 8px;
-        /* with the padding, as tall as the Controls title */
-        line-height: 24px;
         background: #111111;
+      }
+
+      /* the title above the grid: a bar across the top of the middle, from
+         the library to the control panel, styled like the Library title,
+         with the text in the middle */
+      .stage-title {
+        text-align: center;
+        position: fixed;
+        top: 0;
+        left: var(--panel-width);
+        right: var(--panel-width);
+        z-index: 1001;
+        height: 36px;
+        line-height: 36px;
+        padding: 0 var(--panel-padding);
+        background: #111111;
+        color: #ebebeb;
+        font-family: 'SpaceGrotesk-Bold', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      .stage-title[hidden] {
+        display: none;
       }
       .library button,
       .library-preview button {
@@ -189,29 +364,36 @@
         background: #424242;
       }
       .library-save {
-        margin: 8px;
+        margin: var(--title-gap) var(--panel-padding);
       }
       .library-selection-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 4px;
-        margin: 0 8px 8px;
+        margin: 0 var(--panel-padding) 8px;
       }
       .library-selection-actions button {
         flex: 1;
       }
       .library-empty {
-        padding: 0 8px;
+        padding: 0 var(--panel-padding);
         line-height: 1.4;
         /* a \n in the text starts a new line */
         white-space: pre-line;
         opacity: 0.6;
+        /* right below the buttons, with the same small gap as between the
+           buttons and the library's title */
+        margin-top: var(--title-gap);
+      }
+      /* the empty list takes no room while the message shows */
+      .library-list:empty {
+        display: none;
       }
       .library-list {
         flex: 1;
         overflow-y: auto;
         list-style: none;
-        padding: 0 8px 8px;
+        padding: 0 var(--panel-padding) 8px;
       }
       .library-item {
         display: flex;
