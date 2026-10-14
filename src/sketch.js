@@ -1853,8 +1853,9 @@ function currentDrawing() {
 }
 
 // Multiple view: the whole sheet of iterations as one variation. Its
-// picture is cut out of the canvas like a single drawing's. It has no
-// guides, so its preview shows no Grid and Anchors buttons.
+// picture is cut out of the canvas like a single drawing's. Its guides are
+// every iteration's grid and anchors, so its preview has the same Grid and
+// Anchors buttons as a single drawing's.
 function currentSheet() {
   const { showGrid, showAnchors, ...settings } = structuredClone(uiParams);
   const data = {
@@ -1867,26 +1868,44 @@ function currentSheet() {
       inkPicture: inkToPicture(iteration.ink),
     })),
   };
-  const svg = new Blob([sheetSVG().join('\n')], { type: 'image/svg+xml' });
-  return { data, picture: drawingPicture(), svg };
+  const svg = new Blob([sheetFile(drawingSVG, uiParams.backgroundColor).join('\n')], { type: 'image/svg+xml' });
+  const guides = {
+    grid: sheetFile(gridSVG).join('\n'),
+    anchors: sheetFile(anchorsSVG).join('\n'),
+    showGrid: uiParams.showGrid,
+    showAnchors: uiParams.showAnchors,
+  };
+  return { data, picture: drawingPicture(), svg, guides };
 }
 
-// Multiple view: the whole sheet as one SVG file. Every iteration's own SVG
-// file is placed in its spot, shrunk to fit: its width and height (the
-// first line) are swapped for its position and size on the sheet.
-function sheetSVG() {
-  const shapes = [`<rect width="${gridSize}" height="${gridSize}" fill="${svgColor(uiParams.backgroundColor)}"/>`];
+// Multiple view: one SVG file for the whole sheet. `makeFile` makes one
+// iteration's file (drawingSVG, gridSVG or anchorsSVG); each one is placed
+// in its spot, shrunk to fit: its width and height (the first line) are
+// swapped for its position and size on the sheet. The sheet is as wide as
+// the sheet's picture, slant overhang included, so the drawing and the
+// guides line up in the library's preview. With a backgroundColor, the
+// sheet gets a background behind everything.
+function sheetFile(makeFile, backgroundColor) {
+  const overhang = round(slantOverhang(), SVG_DECIMALS);
+  const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
+  const shapes = backgroundColor
+    ? [`<rect x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
+    : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
-      const { x, y, size } = iterationPlace(index);
-      const file = drawingSVG();
-      const place = `x="${round(x, SVG_DECIMALS)}" y="${round(y, SVG_DECIMALS)}" width="${round(size, SVG_DECIMALS)}" height="${round(size, SVG_DECIMALS)}"`;
+      const { x, y, size, scaleFactor } = iterationPlace(index);
+      const file = makeFile();
+      // a slanted file is wider than its grid by the overhang on each side,
+      // which sticks out of the iteration's spot, like on the canvas
+      const left = round(x - slantOverhang() * scaleFactor, SVG_DECIMALS);
+      const placedWidth = round((gridSize + slantOverhang() * 2) * scaleFactor, SVG_DECIMALS);
+      const place = `x="${left}" y="${round(y, SVG_DECIMALS)}" width="${placedWidth}" height="${round(size, SVG_DECIMALS)}"`;
       file[0] = file[0].replace(/width="[^"]*" height="[^"]*"/, place);
       shapes.push(...file);
     });
   });
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${gridSize}" height="${gridSize}" viewBox="0 0 ${gridSize} ${gridSize}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
     ...shapes,
     '</svg>',
   ];

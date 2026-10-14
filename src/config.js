@@ -10,7 +10,7 @@ export const screenshotName = 'Anchorglyph';
 
 // The project's name: the big headline across the top of the window,
 // above the Library, Iteration and Modes titles.
-export const projectTitle = 'Ancyph';
+export const projectTitle = 'Anchorglyph';
 
 // The font for 'Glyph' mode: a file in the fonts folder, written without its
 // extension. Leave it as '' to use whichever font comes first alphabetically.

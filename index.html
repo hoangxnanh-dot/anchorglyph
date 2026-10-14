@@ -320,7 +320,7 @@
 
       /* the title above the grid: a bar across the top of the middle, from
          the library to the control panel, styled like the Library title,
-         with the text in line with the left edge of the grid */
+         with the text in the middle, above the middle of the grid */
       .stage-title {
         position: fixed;
         top: var(--project-title-height);
@@ -329,10 +329,8 @@
         z-index: 1001;
         height: 36px;
         line-height: 36px;
-        /* the text starts where the grid starts: the grid sits in the middle
-           of this bar, so the space on its left is half of what the grid
-           leaves free */
-        padding: 0 0 0 calc((100vw - 2 * var(--panel-width) - var(--grid-size)) / 2);
+        text-align: center;
+        padding: 0 var(--panel-padding);
         background: #111111;
         color: #ebebeb;
         font-family: 'SpaceGrotesk-Bold', sans-serif;
