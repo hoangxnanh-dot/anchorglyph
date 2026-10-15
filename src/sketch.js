@@ -77,7 +77,9 @@
 //                     the Reset All button). The mode stays.
 // Left / Right        New random anchors (same as the Anchors arrows), not in 'Glyph'.
 // S – Save Iteration  Keep the drawing in the library (same as the library's
-//                     Save Iteration button).
+//                     Save Iteration button). It also keeps a video of the
+//                     drawing, from its start up to now, to export as MP4
+//                     from the library's preview.
 //
 // The library on the left keeps saved variations for this page visit: the
 // drawing itself, the anchors and every setting in the panel. Load one to
@@ -101,6 +103,7 @@ import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, 
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
 import { traceOutlines, outlinesToPathData } from './lib/trace.js';
+import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
   RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, dotGridIcon,
@@ -333,6 +336,15 @@ const CELL_PULSE_TURNS = 3;
 // iterations are small on screen, and there are many of them.
 const INK_SCALE = 3;
 
+// Every mode records a video of the drawing while it runs (see
+// recordVideoFrame()), so a saved variation can be exported as MP4. It is this many pixels tall, and as wide as the
+// grid's picture: square, or wider when the grid is slanted.
+const VIDEO_HEIGHT = 1440;
+// Exporting a video with its grid or anchors redraws every frame. This many
+// are redrawn per frame of the sketch: more is faster, but the sketch
+// stutters while it works.
+const VIDEO_EXPORT_FRAMES_PER_DRAW = 6;
+
 // 'Glyph' mode: the empty space kept around the text, as a share of the grid
 // on each side.
 const FONT_MARGIN = 0.1;
@@ -427,6 +439,11 @@ let lastGridMode = 'Shape';
 let ink;
 const inkImages = new Map();
 
+// The video of the drawing so far, see src/lib/video.js
+const videoRecorder = createVideoRecorder({ height: VIDEO_HEIGHT });
+// A video being exported with its guides, see exportVideo(); null otherwise
+let videoExport = null;
+
 // The control panel, the library of saved variations on the left, and the
 // panel controls the code changes or hides after they are made.
 let panel;
@@ -501,6 +518,8 @@ window.draw = function draw() {
   // the saved picture looks like a drawing made in Single view. The frame
   // then starts over with the background below, so it never shows.
   if (iterationSaveWaiting) saveClickedIteration();
+  // a video being exported gets its next frames, also out of sight
+  if (videoExport) renderVideoExport();
 
   updateStartTransition();
 
@@ -528,12 +547,61 @@ function drawSingle(steps) {
   slantGrid();
   advanceDrawing(steps);
   drawInkLayer();
+  recordVideoFrame();
   if (saveWaiting) {
     saveWaiting();
     saveWaiting = null;
   }
   drawGuides();
   pop();
+}
+
+// Adds the drawing as it is right now to the video, without the guides:
+// where the anchors are is kept with the frame instead, so the grid and the
+// anchors can be switched on or off when the video is exported (see
+// exportVideo()). The video starts over with the drawing (see
+// restartDrawing()). While paused nothing is added, so the video skips the
+// pause. On the start screen, and while it opens or closes, nothing is
+// recorded: the video starts once the main screen is there.
+function recordVideoFrame() {
+  if (!isOnMainScreen() || startTransition) {
+    videoRecorder.reset();
+    return;
+  }
+  if (animationPaused) return;
+  // how far each anchor has moved from its place, two numbers per anchor;
+  // in Multiple view one list per iteration
+  const anchorMoves = isMultipleView()
+    ? iterations.map((iteration) => anchorMovesOf(iteration.anchors))
+    : anchorMovesOf(anchors);
+  // the same part of the canvas as the saved picture, see drawingPicture()
+  const density = pixelDensity();
+  const overhang = slantOverhang();
+  videoRecorder.addFrame(
+    drawingContext.canvas,
+    (gridLeft() - overhang) * density, gridTop() * density,
+    (gridSize + overhang * 2) * density, gridSize * density,
+    anchorMoves,
+  );
+}
+
+// dx and dy of every anchor, packed into one short list of numbers
+function anchorMovesOf(anchorList) {
+  const moves = new Float32Array(anchorList.length * 2);
+  anchorList.forEach((anchor, index) => {
+    moves[index * 2] = anchor.dx;
+    moves[index * 2 + 1] = anchor.dy;
+  });
+  return moves;
+}
+
+// The saved anchors, moved the way `moves` says (see anchorMovesOf())
+function anchorsMovedBy(savedAnchors, moves) {
+  return savedAnchors.map((anchor, index) => ({
+    ...anchor,
+    dx: moves?.[index * 2] ?? anchor.dx,
+    dy: moves?.[index * 2 + 1] ?? anchor.dy,
+  }));
 }
 
 // The start screen fades out over START_TRANSITION_DURATION once a mode is
@@ -644,6 +712,8 @@ function drawIterations() {
     });
   });
 
+  // the drawings alone, like in Single view
+  recordVideoFrame();
   if (saveWaiting) {
     saveWaiting();
     saveWaiting = null;
@@ -862,6 +932,8 @@ function resizeGrid() {
 // from the anchors and settings as they are now.
 function restartDrawing() {
   setPaused(false);
+  // the video starts over with the drawing
+  videoRecorder.reset();
   inkLoadNumber += 1;
   if (ink) ink.fill(0);
   loopStep = 0;
@@ -2091,8 +2163,17 @@ function refreshPanel() {
 function captureVariation() {
   // Everything is collected in draw(), at the next frame, right after the
   // ink is drawn: then the saved state and the pictures match exactly.
+  // The video so far comes along as { render }: render(options) makes the
+  // MP4 file, see exportVideo(). null if nothing was recorded. The library
+  // waits for it, which only takes a moment.
   return new Promise((resolve) => {
-    saveWaiting = () => resolve(isMultipleView() ? currentSheet() : currentDrawing());
+    saveWaiting = () => {
+      const variation = isMultipleView() ? currentSheet() : currentDrawing();
+      const video = videoRecorder.snapshot().then((recording) => recording && {
+        render: (options, onProgress) => exportVideo(recording, variation.data, options, onProgress),
+      });
+      resolve({ ...variation, video });
+    };
   });
 }
 
@@ -2182,6 +2263,107 @@ function sheetFile(makeFile, backgroundColor) {
   ];
 }
 
+// The MP4 file of a saved video. `recording` is the drawing alone, as
+// recorded; `savedData` is the variation it was saved with, for its grid,
+// its anchors and its colors. Without guides the recording is the file.
+// With the grid or the anchors, every frame is played back, drawn onto the
+// canvas at the video's size, with the guides on top, drawn by the same
+// code as on screen, and recorded again: renderVideoExport() does a few
+// frames per frame of the sketch. `onProgress` hears how far it has come,
+// from 0 to 1. The background always stays: a video can't be see-through.
+function exportVideo(recording, savedData, { showGrid, showAnchors }, onProgress) {
+  if (!showGrid && !showAnchors) return Promise.resolve(mp4File(recording));
+  if (videoExport) return Promise.reject(new Error('Another video is being exported.'));
+  return new Promise((resolve, reject) => {
+    videoExport = {
+      recording, savedData, showGrid, showAnchors, onProgress, resolve, reject,
+      reader: createFrameReader(recording),
+      encoder: createVideoRecorder({ height: recording.height }),
+      // how many frames are done, and the one being drawn
+      done: 0,
+      frame: null,
+    };
+  });
+}
+
+// draw() calls this while a video is exported: the next few frames, drawn
+// at the canvas's top left corner. draw() paints the whole canvas over it
+// right after, so it never shows.
+function renderVideoExport() {
+  const job = videoExport;
+  const total = job.recording.frames.length;
+  for (let count = 0; count < VIDEO_EXPORT_FRAMES_PER_DRAW && job.done < total; count++) {
+    // null while the next frame is still being unpacked: next time then
+    job.frame ??= job.reader.take();
+    if (!job.frame) break;
+    const region = drawVideoExportFrame(job);
+    // false while the encoder is busy: this frame is drawn again next time
+    if (!job.encoder.addFrame(drawingContext.canvas, 0, 0, region.width, region.height)) break;
+    job.frame.close();
+    job.frame = null;
+    job.done += 1;
+  }
+  job.onProgress?.(job.done / total);
+
+  if (job.reader.hasFailed()) {
+    videoExport = null;
+    job.reader.close();
+    job.reject(new Error('The video could not be read.'));
+  } else if (job.done === total) {
+    videoExport = null;
+    job.reader.close();
+    job.encoder.snapshot().then((recording) => {
+      if (recording) job.resolve(mp4File(recording));
+      else job.reject(new Error('The video could not be made.'));
+    });
+  }
+}
+
+// One frame of a video export: the recorded drawing with the guides on
+// top, as the saved variation had them. For a moment the saved settings
+// and anchors stand in for yours, so the usual drawing code draws them.
+// The grid is drawn exactly as many canvas pixels tall as the video, so
+// nothing is made larger or smaller. Gives back how big that part of the
+// canvas is, in canvas pixels.
+function drawVideoExportFrame(job) {
+  const { settings, anchors: savedAnchors, iterations: savedIterations } = job.savedData;
+  const anchorMoves = job.recording.extras[job.done];
+  const yourSettings = { ...uiParams };
+  const yourAnchors = anchors;
+  Object.assign(uiParams, settings, { showGrid: job.showGrid, showAnchors: job.showAnchors });
+
+  const overhang = slantOverhang();
+  // one grid pixel is this many canvas units, so the grid comes out exactly
+  // the video's height in canvas pixels
+  const videoScale = job.recording.height / (gridSize * pixelDensity());
+  push();
+  scale(videoScale);
+  translate(overhang, 0);
+  drawingContext.drawImage(job.frame, -overhang, 0, gridSize + overhang * 2, gridSize);
+  if (savedIterations) {
+    // a sheet: every iteration's guides in its spot, like drawIterations()
+    savedIterations.forEach((iteration, index) => {
+      const { x, y, scaleFactor } = iterationPlace(index);
+      push();
+      translate(x, y);
+      scale(scaleFactor);
+      slantGrid();
+      anchors = anchorsMovedBy(iteration.anchors, anchorMoves?.[index]);
+      drawGuides();
+      pop();
+    });
+  } else {
+    slantGrid();
+    anchors = anchorsMovedBy(savedAnchors, anchorMoves);
+    drawGuides();
+  }
+  pop();
+
+  Object.assign(uiParams, yourSettings);
+  anchors = yourAnchors;
+  return { width: (gridSize + overhang * 2) * videoScale * pixelDensity(), height: job.recording.height };
+}
+
 // Multiple view: a click on an iteration saves just that one. The library
 // calls this instead of captureVariation(); draw() does the work at the
 // next frame, see saveClickedIteration().
@@ -2235,6 +2417,8 @@ function applyVariation(data) {
   loopStep = savedLoopStep;
   inkLoadNumber += 1;
   pictureToInk(inkPicture);
+  // a new video starts from the loaded drawing once it plays
+  videoRecorder.reset();
   // paused, so you see it exactly as it was saved. Space continues drawing.
   setPaused(true);
   refreshPanel();
@@ -2275,6 +2459,8 @@ function applySheet({ settings, iterations: savedIterations }) {
     return iteration;
   });
   anchors = savedIterations[0].anchors.map((anchor) => ({ ...anchor }));
+  // a new video starts from the loaded sheet once it plays
+  videoRecorder.reset();
   setPaused(true);
   refreshPanel();
 }
@@ -2671,7 +2857,7 @@ function createTopBar() {
 }
 
 // Small labels around the grid, like on a drawing board: what is shown and
-// how big it is above the grid, the grid and the anchors below it, and a
+// how many pixels a PNG of it gets above the grid, the grid and the anchors below it, and a
 // + mark beyond each corner. It lies exactly over the grid and lets every
 // click through. updateStageFrame() keeps it in place. Its look and size
 // are in index.html, under "the labels around the grid".
@@ -2688,7 +2874,6 @@ function createStageFrame() {
     frame.append(label, mark);
     labels[corner] = label;
   }
-  labels['top-right'].textContent = `${gridSize} × ${gridSize}`;
 
   document.body.appendChild(frame);
   return { element: frame, labels };
@@ -2706,6 +2891,11 @@ function updateStageFrame() {
 
   const perRow = uiParams.iterationsPerRow;
   showText(labels['top-left'], isMultipleView() ? `Iterations ${perRow} × ${perRow}` : 'Iteration canvas');
+  // the PNG resolution picked in the library's preview. A slanted grid
+  // makes the picture wider by its overhang on both sides, like the PNG.
+  const pictureHeight = library.resolution();
+  const pictureWidth = Math.round((pictureHeight * (gridSize + slantOverhang() * 2)) / gridSize);
+  showText(labels['top-right'], `${pictureWidth} × ${pictureHeight}`);
   showText(labels['bottom-left'], `Grid ${uiParams.columns} × ${uiParams.rows}`);
   showText(labels['bottom-right'], `${anchors.length} anchors${animationPaused ? ' · paused' : ''}`);
 }

@@ -937,6 +937,9 @@
       /* the message while nothing is saved: a dot, a line, and a quieter
          hint below it */
       .library-empty {
+        /* the room above each intro paragraph and above the shortcuts, so
+           they are all evenly spaced */
+        --intro-gap: 24px;
         padding: 0 var(--panel-padding);
         line-height: 1.5;
       }
@@ -968,14 +971,14 @@
          They line up with the text above, after its dot. */
       .library-intro,
       .library-shortcuts {
-        margin-top: 24px;
+        margin-top: var(--intro-gap);
       }
       .library-intro p,
       .library-shortcuts {
         padding-left: 22px;
       }
       .library-intro p + p {
-        margin-top: 10px;
+        margin-top: var(--intro-gap);
       }
       /* the shortcuts are as quiet as the hint */
       .library-shortcuts {
@@ -1196,11 +1199,11 @@
       .library-preview-stage {
         position: relative;
       }
-      /* as large as fits in the window, leaving room for the name above
-         and the buttons below */
+      /* as large as fits in the window, leaving room for the name and the
+         settings above and the export buttons below */
       .library-preview-image {
         display: block;
-        width: min(calc(100vw - 160px), calc(100vh - 290px));
+        width: min(calc(100vw - 160px), calc(100vh - 354px));
         aspect-ratio: 1;
         object-fit: contain;
         border-radius: var(--radius);
@@ -1220,9 +1223,10 @@
         object-fit: contain;
         pointer-events: none;
       }
-      /* below the frame: Grid, Anchors and Background on the left, PNG
-         and SVG on the right */
-      .library-preview-footer {
+      /* the two rows of buttons: under the name, Grid, Anchors and
+         Background on the left and the PNG resolution on the right; below
+         the frame, PNG, SVG and MP4 on the left */
+      .library-preview-bar {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
@@ -1233,7 +1237,8 @@
         width: 0;
         min-width: 100%;
       }
-      /* PNG and SVG stay on the right, also on a row of their own */
+      /* the last group of a row stays on the right, also when it wraps
+         onto a row of its own */
       .library-preview-buttons:last-child {
         margin-left: auto;
       }
@@ -1241,16 +1246,20 @@
         display: flex;
         gap: 8px;
       }
-      .library-preview-footer .ui-button {
+      /* PNG, SVG and MP4 start on the left, under Grid */
+      .library-preview-buttons.library-preview-exports {
+        margin-left: 0;
+      }
+      .library-preview-bar .ui-button {
         height: var(--large-button-height);
         padding: 0 20px;
         gap: 10px;
       }
       /* the PNG resolution field: a grey button that opens a short list.
          The small arrow on the right says it opens. Written with
-         .library-preview-footer in front, so the grey buttons' own padding
+         .library-preview-bar in front, so the grey buttons' own padding
          and hover color don't wipe out the arrow. */
-      .library-preview-footer .library-preview-resolution {
+      .library-preview-bar .library-preview-resolution {
         appearance: none;
         padding-right: 36px;
         background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -1264,10 +1273,10 @@
       }
       /* a guide or the background that is showing: its button tinted in
          the accent color */
-      .library-preview-footer .ui-button.is-on {
+      .library-preview-bar .ui-button.is-on {
         background: color-mix(in srgb, var(--accent-color) 22%, var(--card-color));
       }
-      .library-preview-footer .ui-button.is-on:hover {
+      .library-preview-bar .ui-button.is-on:hover {
         background: color-mix(in srgb, var(--accent-color) 32%, var(--card-color));
       }
     </style>

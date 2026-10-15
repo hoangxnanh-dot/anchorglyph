@@ -12,7 +12,11 @@
 //                    picture, Background shows or hides the background
 //                    (a checkerboard shows where it is see-through), and
 //                    PNG and SVG export it as you see it there. The field
-//                    left of PNG sets how many pixels the PNG has.
+//                    left of PNG sets how many pixels the PNG has. MP4
+//                    exports the video of the drawing up to the moment it
+//                    was saved, with the grid and anchors that are showing
+//                    (always with its background: a video can't be
+//                    see-through).
 //   Load (arrow to the right, bottom right of the picture)
 //                    brings the variation back exactly as it was saved,
 //                    paused. Space continues drawing from there.
@@ -35,21 +39,27 @@
 //                 picture of it (as a data URL), the drawing as an SVG file,
 //                 and its guides: { grid, anchors, showGrid, showAnchors },
 //                 the grid and the anchors as see-through SVG files (text) of
-//                 the same size, and whether each was showing
+//                 the same size, and whether each was showing. It may also
+//                 hold `video`: a Promise of { render } or of null.
+//                 render({ showGrid, showAnchors }, onProgress) gives back
+//                 a Promise of the MP4 file (Blob)
 //   apply(data)   rebuilds the drawing from that data
 //
-// The library gives back { element, toggle, save }. save() does what Save
-// Iteration does; save(otherCapture) saves what otherCapture() gives back
-// instead, with the same flash and slide.
+// The library gives back { element, toggle, save, resolution }. save() does
+// what Save Iteration does; save(otherCapture) saves what otherCapture()
+// gives back instead, with the same flash and slide. resolution() is how
+// many pixels tall a PNG from the preview gets, as picked there.
 //
 //   const library = createLibrary({ capture, apply });
 //
 // The look of the panel is in index.html, under "the library".
 
-import { screenshotName, variationName, variationDigits, gridSize } from '../config.js';
+import { screenshotName, variationName, variationDigits } from '../config.js';
 import { saveToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton, createProjectName } from './gui.js';
-import { ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon } from './icons.js';
+import {
+  ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
+} from './icons.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
 // camera, and the new card slides down into the list from above while the
@@ -79,9 +89,9 @@ const SHORTCUTS = [
   { key: 'S', action: 'Save Iteration' },
   { key: 'R', action: 'Randomize All' },
   { key: 'C', action: 'Reset All' },
-  { key: '← / →', action: 'New random anchors' },
-  { key: 'T', action: 'Open / close folders' },
-  { key: 'H', action: 'Hide guides' },
+  { key: '← / →', action: 'Iterate Anchors' },
+  { key: 'T', action: 'Open / Close Controls' },
+  { key: 'H', action: 'Hide Guides' },
   { key: 'G', action: 'Hide UI' },
 ];
 
@@ -214,14 +224,14 @@ export function createLibrary({ capture, apply }) {
   const closePreviewButton = makeIconButton(CLOSE_ICON, 'Close', closePreview);
 
   // a thin frame around the picture, with a label above it on each side:
-  // the variation's mode on the left, the drawing's size on the right
+  // the variation's mode on the left, on the right the size in pixels the
+  // PNG gets at the resolution picked below (see showPreviewSize())
   const previewFrame = document.createElement('div');
   previewFrame.className = 'library-preview-frame';
   const previewLabels = document.createElement('div');
   previewLabels.className = 'library-preview-labels';
   const previewModeLabel = document.createElement('span');
   const previewSizeLabel = document.createElement('span');
-  previewSizeLabel.textContent = `${gridSize} × ${gridSize}`;
   previewLabels.append(previewModeLabel, previewSizeLabel);
 
   // the picture, with the grid and the anchors as see-through layers on top
@@ -235,8 +245,9 @@ export function createLibrary({ capture, apply }) {
   anchorsLayer.className = 'library-preview-layer';
   previewStage.append(previewImage, gridLayer, anchorsLayer);
 
-  // the buttons below the picture: the two guides and the background on
-  // the left, the exports on the right
+  // the settings under the name: the two guides and the background on the
+  // left, the PNG resolution on the right. The exports sit below the
+  // picture, on the left.
   const gridToggle = makeButton('Grid', () => toggleLayer('showGrid'), dotGridIcon());
   const anchorsToggle = makeButton('Anchors', () => toggleLayer('showAnchors'), ANCHOR_ICON);
   const backgroundToggle = makeButton('Background', () => toggleLayer('showBackground'), BACKGROUND_ICON);
@@ -254,16 +265,34 @@ export function createLibrary({ capture, apply }) {
     option.title = `${size} × ${size} pixels`;
     resolutionField.add(option);
   }
+  // the size label above the picture follows the resolution, and the
+  // picture's shape once it has loaded
+  resolutionField.addEventListener('change', showPreviewSize);
+  previewImage.addEventListener('load', showPreviewSize);
+  showPreviewSize();
+  // only for variations with a video (not in browsers that can't record
+  // one, nor for a single iteration saved from Multiple view), see
+  // openPreview()
+  const videoButton = makeButton('MP4', () => exportPreview('mp4'), VIDEO_ICON);
+  // set while an MP4 is being made, see exportVideo()
+  let videoExporting = false;
+  const resolutionButtons = document.createElement('div');
+  resolutionButtons.className = 'library-preview-buttons';
+  resolutionButtons.append(resolutionField);
+  const previewSettings = document.createElement('div');
+  previewSettings.className = 'library-preview-bar';
+  previewSettings.append(guideButtons, resolutionButtons);
+
   const exportButtons = document.createElement('div');
-  exportButtons.className = 'library-preview-buttons';
+  exportButtons.className = 'library-preview-buttons library-preview-exports';
   exportButtons.append(
-    resolutionField,
     makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
     makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
+    videoButton,
   );
   const previewFooter = document.createElement('div');
-  previewFooter.className = 'library-preview-footer';
-  previewFooter.append(guideButtons, exportButtons);
+  previewFooter.className = 'library-preview-bar';
+  previewFooter.append(exportButtons);
 
   // the variation in the preview, which guides show on it, and whether
   // its background does. Background stays as you set it from one preview
@@ -273,7 +302,7 @@ export function createLibrary({ capture, apply }) {
 
   previewFrame.append(previewLabels, previewStage);
   previewHeader.append(previewName, closePreviewButton);
-  previewContent.append(previewHeader, previewFrame, previewFooter);
+  previewContent.append(previewHeader, previewSettings, previewFrame, previewFooter);
   preview.append(previewContent);
   document.body.appendChild(preview);
 
@@ -298,8 +327,9 @@ export function createLibrary({ capture, apply }) {
   // part of what is on screen.
   async function saveCurrent(captureWith = capture) {
     showFlash();
-    const { data, picture, svg, guides } = await captureWith();
-    const variation = { id: String(Date.now()), name: nextName(), data, picture, svg, guides };
+    const { data, picture, svg, guides, video } = await captureWith();
+    // the video is packed after the drawing is caught
+    const variation = { id: String(Date.now()), name: nextName(), data, picture, svg, guides, video: (await video) ?? null };
     // where every card is before the new one arrives
     const placesBefore = cardPlaces();
     // newest at the top, where you look first
@@ -411,6 +441,7 @@ export function createLibrary({ capture, apply }) {
     const { guides } = variation;
     gridToggle.hidden = !guides;
     anchorsToggle.hidden = !guides;
+    videoButton.hidden = !variation.video;
     previewLayers.showGrid = Boolean(guides?.showGrid);
     previewLayers.showAnchors = Boolean(guides?.showAnchors);
     if (guides) {
@@ -442,6 +473,7 @@ export function createLibrary({ capture, apply }) {
     gridToggle.classList.toggle('is-on', previewLayers.showGrid);
     anchorsToggle.classList.toggle('is-on', previewLayers.showAnchors);
     backgroundToggle.classList.toggle('is-on', previewLayers.showBackground);
+    showVideoButton();
     // the checkerboard behind a see-through picture, see index.html
     previewStage.classList.toggle('is-see-through', !previewLayers.showBackground);
     const variation = previewVariation;
@@ -467,6 +499,17 @@ export function createLibrary({ capture, apply }) {
     return svgText.split('\n').filter((line) => !line.includes('class="background"')).join('\n');
   }
 
+  // The size label above the picture: the PNG's width and height at the
+  // resolution picked. A slanted grid makes the picture wider than tall,
+  // so the width follows the picture's own shape, like the PNG's does.
+  function showPreviewSize() {
+    const height = Number(resolutionField.value);
+    const width = previewImage.naturalHeight
+      ? Math.round((height * previewImage.naturalWidth) / previewImage.naturalHeight)
+      : height;
+    previewSizeLabel.textContent = `${width} × ${height}`;
+  }
+
   // The guides that show in the preview right now, as SVG text
   function visibleGuides() {
     const { guides } = previewVariation;
@@ -483,6 +526,11 @@ export function createLibrary({ capture, apply }) {
   async function exportPreview(format) {
     const variation = previewVariation;
     const filename = exportFileName(variation, format, 1);
+
+    if (format === 'mp4') {
+      await exportVideo(variation, filename);
+      return;
+    }
 
     // the guides' shapes go just before the drawing's closing </svg>. All
     // files are the same size, so the shapes land in the right place.
@@ -514,6 +562,37 @@ export function createLibrary({ capture, apply }) {
     canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
     // toBlob copes with large pictures better than a data URL does
     canvas.toBlob((file) => saveToDownloads(file, filename), 'image/png');
+  }
+
+  // MP4 is greyed out while Background is off: a video can't be
+  // see-through, so it would not look like the preview. It also waits
+  // while a video is being made.
+  function showVideoButton() {
+    videoButton.disabled = videoExporting || !previewLayers.showBackground;
+    videoButton.title = previewLayers.showBackground ? '' : 'A video always has its background: switch Background on';
+  }
+
+  // MP4: the video with the guides that are showing. Adding guides means
+  // redrawing every frame, which takes a few seconds: meanwhile the button
+  // shows how far it is, and doesn't take another click.
+  async function exportVideo(variation, filename) {
+    if (videoButton.disabled) return;
+    videoExporting = true;
+    showVideoButton();
+    const label = videoButton.lastChild;
+    try {
+      const file = await variation.video.render(
+        { showGrid: previewLayers.showGrid, showAnchors: previewLayers.showAnchors },
+        (share) => {
+          label.textContent = `MP4 ${Math.round(share * 100)}%`;
+        },
+      );
+      saveToDownloads(file, filename);
+    } finally {
+      label.textContent = 'MP4';
+      videoExporting = false;
+      showVideoButton();
+    }
   }
 
   // SVG text turned into a data URL, so an <img> can show it
@@ -673,5 +752,5 @@ export function createLibrary({ capture, apply }) {
     panel.hidden = !panel.hidden;
   }
 
-  return { element: panel, toggle, save: saveCurrent };
+  return { element: panel, toggle, save: saveCurrent, resolution: () => Number(resolutionField.value) };
 }
