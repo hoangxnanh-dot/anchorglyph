@@ -482,6 +482,31 @@ export function addEyeToggle(folder, params, property, onChange = () => {}) {
   return { updateDisplay };
 }
 
+// A small headline inside a folder, with a thin line above it, to start a
+// group of controls of its own, like Gradient in the Colors folder:
+//
+//   addSubheading(colors, 'Gradient', { randomize: randomizeGradient });
+//
+// The controls added to the folder after it sit below it. With `randomize`,
+// crossing arrows on its right run it, like the arrows on a folder's title.
+// Its look is in index.html, under "the subheadings".
+export function addSubheading(folder, text, { randomize } = {}) {
+  const heading = document.createElement('div');
+  heading.className = 'lil-subheading';
+  heading.append(text);
+  if (randomize) {
+    const icon = document.createElement('span');
+    icon.className = 'lil-title-icon';
+    icon.setAttribute('role', 'button');
+    icon.innerHTML = RANDOMIZE_ICON;
+    icon.title = `Randomize ${text}`;
+    icon.addEventListener('click', randomize);
+    heading.appendChild(icon);
+  }
+  folder.$children.appendChild(heading);
+  return heading;
+}
+
 // Crossing arrows that run `randomize` when clicked, instead of a Randomize button
 // inside the folder. Call show(false) or show(true) on what it returns to
 // hide or show it.

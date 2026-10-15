@@ -45,8 +45,9 @@
 //
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
-// Randomize All       New grid, anchors, spline, colors, drift and speed at once.
-//                     In 'Glyph' it also types a new text of 1 to 3 characters.
+// Randomize All       New grid, anchors, spline, colors, gradient, drift and
+//                     speed at once. In 'Glyph' it also types a new text of
+//                     1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
@@ -95,12 +96,15 @@
 
 import p5 from 'p5';
 import {
-  createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, applyAccentColor, createSwitchButton,
+  createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, addSubheading, applyAccentColor, createSwitchButton,
   makeButton, makeIconButton, setButtonIcon,
 } from './lib/gui.js';
 import { createLibrary } from './lib/library.js';
 import { createPanelButtons } from './lib/panels.js';
-import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle, projectSubtitle } from './config.js';
+import {
+  gridSize, backgroundColor, foregroundColor, accentColor, foregroundEndColor, backgroundEndColor,
+  startingText, projectTitle, projectSubtitle,
+} from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
 import { traceOutlines, outlinesToPathData } from './lib/trace.js';
@@ -179,6 +183,10 @@ const MIN_COLOR_CONTRAST = 150;
 // The highest value a color channel can have. Inverting a channel turns
 // 0 into this and this into 0.
 const MAX_CHANNEL = 255;
+// The Gradient switch's options, and the range of its Angle slider, in
+// degrees.
+const gradientOptions = ['Off', 'Linear', 'Radial'];
+const gradientAngleRange = { min: 0, max: 360, step: 1 };
 
 // The values the control panel changes. The colors start at whatever you set
 // in src/config.js, and are { r, g, b } objects with channels from 0 to 255.
@@ -223,6 +231,13 @@ const uiParams = {
   backgroundColor,
   accentColor,
   invertColors: false, // the Invert switch: true = Main and Background turned around, dark panels
+  // Gradient, in the Colors folder: 'Off', 'Linear' or 'Radial'. When it
+  // is on, the drawing runs from Main to Main 2 and the background from
+  // Background to Background 2 (see gradientGeometry()).
+  gradient: 'Off',
+  gradientAngle: 90,   // Linear: the direction, in degrees: 0 = left to right, 90 = top to bottom
+  foregroundEndColor,
+  backgroundEndColor,
 };
 
 // A copy of every value as the sketch opens with it, for "Reset All". It is a
@@ -448,8 +463,8 @@ let lastGridMode = 'Shape';
 // The ink layer: one number per ink pixel, 0 = empty, 1 = fully inked.
 // It is square, with INK_SCALE ink pixels per grid pixel each way (1 in
 // Multiple view). `inkImages` are the pictures it is turned into for the
-// screen, one per layer size, with the Main color they were last given;
-// see drawInk().
+// screen, one per layer size, with the colors they were last given (Main,
+// or the gradient); see drawInk().
 let ink;
 const inkImages = new Map();
 
@@ -511,6 +526,9 @@ let anchorsEye;
 let lineWidthController;
 let shapeWidthController;
 let paintModeController;
+let gradientController;
+let gradientAngleController;
+let gradientColorControllers = [];
 let viewModeController;
 let iterationsPerRowController;
 let textureController;
@@ -549,7 +567,7 @@ window.draw = function draw() {
 
   updateStartTransition();
 
-  background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+  paintBackground();
   if (isMultipleView()) drawIterations();
   else drawSingle(stepsThisFrame());
 
@@ -1465,32 +1483,27 @@ function addInkStroke(startX, startY, endX, endY, radius, opacity) {
   }
 }
 
-// Turns the ink layer into an image in the Main color, transparent where
-// there is no ink, so color changes in the panel apply right away.
+// Turns the ink layer into an image in the Main color (or the gradient from
+// Main to Main 2), transparent where there is no ink, so color changes in
+// the panel apply right away.
 function drawInk() {
-  const { r, g, b } = uiParams.foregroundColor;
   // One picture per layer size, made the first time it is needed. Its
   // pixels are read once (loadPixels), after that only written to.
   const size = layerSize(ink);
   if (!inkImages.has(size)) {
     const picture = createImage(size, size);
     picture.loadPixels();
-    inkImages.set(size, { picture, colorText: '' });
+    inkImages.set(size, { picture, colorKey: '' });
   }
   const screenImage = inkImages.get(size);
   // every pixel takes four places in the list: red, green, blue, opacity
   const pixelValues = screenImage.picture.pixels;
-  // red, green and blue only change with the Main color, so they are only
-  // written then; the opacity follows the ink every frame
-  const colorText = svgColor(uiParams.foregroundColor);
-  if (screenImage.colorText !== colorText) {
-    screenImage.colorText = colorText;
-    for (let index = 0; index < ink.length; index++) {
-      const place = index * 4;
-      pixelValues[place] = r;
-      pixelValues[place + 1] = g;
-      pixelValues[place + 2] = b;
-    }
+  // red, green and blue only change with the colors and the gradient, so
+  // they are only written then; the opacity follows the ink every frame
+  const colorKey = JSON.stringify([uiParams.foregroundColor, uiParams.foregroundEndColor, gradientGeometry()]);
+  if (screenImage.colorKey !== colorKey) {
+    screenImage.colorKey = colorKey;
+    paintInkColors(pixelValues, size);
   }
   for (let index = 0; index < ink.length; index++) {
     pixelValues[index * 4 + 3] = ink[index] * SOLID;
@@ -1498,6 +1511,28 @@ function drawInk() {
   screenImage.picture.updatePixels();
   // shown as big as the grid, whatever its number of pixels
   image(screenImage.picture, 0, 0, gridSize, gridSize);
+}
+
+// Gives every pixel of the ink's picture its color: Main everywhere, or
+// with a gradient the color of its spot between Main and Main 2. `size` is
+// how many pixels wide the picture is; each pixel is measured at its
+// middle, in the grid's pixels.
+function paintInkColors(pixelValues, size) {
+  const geometry = gradientGeometry();
+  const startColor = uiParams.foregroundColor;
+  const endColor = uiParams.foregroundEndColor;
+  const pixelSize = gridSize / size;
+  for (let pixelY = 0; pixelY < size; pixelY++) {
+    for (let pixelX = 0; pixelX < size; pixelX++) {
+      const share = geometry
+        ? gradientShare((pixelX + 0.5) * pixelSize, (pixelY + 0.5) * pixelSize, geometry)
+        : 0;
+      const place = (pixelY * size + pixelX) * 4;
+      pixelValues[place] = startColor.r + (endColor.r - startColor.r) * share;
+      pixelValues[place + 1] = startColor.g + (endColor.g - startColor.g) * share;
+      pixelValues[place + 2] = startColor.b + (endColor.b - startColor.b) * share;
+    }
+  }
 }
 
 // The cell styles: the ink is counted per grid cell, and each cell gets a
@@ -1543,10 +1578,13 @@ function inkCells() {
   return shapes;
 }
 
+// Each shape in the color of the spot it sits on (Main, unless there is a
+// gradient)
 function drawInkCells() {
   noStroke();
-  fill(uiParams.foregroundColor.r, uiParams.foregroundColor.g, uiParams.foregroundColor.b);
   for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
+    const { r, g, b } = inkColorAt(centerX, centerY);
+    fill(r, g, b);
     drawCellShape(centerX, centerY, shapeWidth, shapeHeight);
   }
 }
@@ -1589,40 +1627,152 @@ function svgColor({ r, g, b }) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// THE GRADIENTS. Where the gradient runs, in the grid's pixels, or null
+// while Gradient is Off. The screen and the SVG files both use this, so
+// they always agree.
+//   Linear  a straight line through the middle of the grid, in the
+//           direction of Angle, just long enough to reach the grid's
+//           corners: { type, x1, y1, x2, y2 }
+//   Radial  from the middle of the grid out to its corners: { type, cx, cy, r }
+function gradientGeometry() {
+  const middle = gridSize / 2;
+  if (uiParams.gradient === 'Linear') {
+    const angle = radians(uiParams.gradientAngle);
+    const directionX = Math.cos(angle);
+    const directionY = Math.sin(angle);
+    const halfLength = (Math.abs(directionX) + Math.abs(directionY)) * middle;
+    return {
+      type: 'Linear',
+      x1: middle - directionX * halfLength,
+      y1: middle - directionY * halfLength,
+      x2: middle + directionX * halfLength,
+      y2: middle + directionY * halfLength,
+    };
+  }
+  if (uiParams.gradient === 'Radial') return { type: 'Radial', cx: middle, cy: middle, r: middle * Math.SQRT2 };
+  return null;
+}
+
+// How far along the gradient the point x, y lies: 0 at its start, 1 at its
+// end, and the same past either end. This runs for every ink pixel when the
+// colors change, so it uses JavaScript's own Math functions, which are much
+// faster than p5's in such a long loop (see src/lib/trace.js).
+function gradientShare(x, y, geometry) {
+  if (geometry.type === 'Radial') {
+    const offsetX = x - geometry.cx;
+    const offsetY = y - geometry.cy;
+    return Math.min(1, Math.sqrt(offsetX * offsetX + offsetY * offsetY) / geometry.r);
+  }
+  const lengthX = geometry.x2 - geometry.x1;
+  const lengthY = geometry.y2 - geometry.y1;
+  const share = ((x - geometry.x1) * lengthX + (y - geometry.y1) * lengthY) / (lengthX * lengthX + lengthY * lengthY);
+  return Math.min(1, Math.max(0, share));
+}
+
+// The color `share` of the way from startColor to endColor
+function mixColors(startColor, endColor, share) {
+  return {
+    r: Math.round(startColor.r + (endColor.r - startColor.r) * share),
+    g: Math.round(startColor.g + (endColor.g - startColor.g) * share),
+    b: Math.round(startColor.b + (endColor.b - startColor.b) * share),
+  };
+}
+
+// The drawing's color at x, y in the grid: Main, or with a gradient the
+// color of that spot between Main and Main 2. The cell styles color each
+// shape with it.
+function inkColorAt(x, y) {
+  const geometry = gradientGeometry();
+  if (!geometry) return uiParams.foregroundColor;
+  return mixColors(uiParams.foregroundColor, uiParams.foregroundEndColor, gradientShare(x, y, geometry));
+}
+
+// The background of the canvas: Background, or with a gradient running
+// from Background to Background 2 across the grid, wherever the grid is.
+// Past the grid's corners it keeps the end colors.
+function paintBackground() {
+  const { r, g, b } = uiParams.backgroundColor;
+  background(r, g, b);
+  const geometry = gradientGeometry();
+  if (!geometry) return;
+  const left = gridLeft();
+  const top = gridTop();
+  const gradient = geometry.type === 'Radial'
+    ? drawingContext.createRadialGradient(left + geometry.cx, top + geometry.cy, 0, left + geometry.cx, top + geometry.cy, geometry.r)
+    : drawingContext.createLinearGradient(left + geometry.x1, top + geometry.y1, left + geometry.x2, top + geometry.y2);
+  gradient.addColorStop(0, svgColor(uiParams.backgroundColor));
+  gradient.addColorStop(1, svgColor(uiParams.backgroundEndColor));
+  drawingContext.save();
+  drawingContext.fillStyle = gradient;
+  drawingContext.fillRect(0, 0, width, height);
+  drawingContext.restore();
+}
+
+// A gradient for an SVG file, from startColor to endColor, named `id` so
+// shapes can be filled with it: fill="url(#id)". It is measured in the
+// same grid pixels as the shapes that use it ("userSpaceOnUse"), so it
+// leans with them on a slanted grid, like on screen.
+function svgGradient(id, startColor, endColor, geometry) {
+  const rounded = (value) => round(value, SVG_DECIMALS);
+  const stops = `<stop offset="0" stop-color="${svgColor(startColor)}"/><stop offset="1" stop-color="${svgColor(endColor)}"/>`;
+  if (geometry.type === 'Radial') {
+    return `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${rounded(geometry.cx)}" cy="${rounded(geometry.cy)}" r="${rounded(geometry.r)}">${stops}</radialGradient>`;
+  }
+  const { x1, y1, x2, y2 } = geometry;
+  return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${rounded(x1)}" y1="${rounded(y1)}" x2="${rounded(x2)}" y2="${rounded(y2)}">${stops}</linearGradient>`;
+}
+
+// An SVG file's background, from `left` across `fileWidth`: one rectangle
+// marked class="background" (the library leaves it out when exporting
+// without background). With a gradient, the gradient goes on the line
+// before it.
+function backgroundSVG(left, fileWidth) {
+  const geometry = gradientGeometry();
+  const place = `x="${left}" width="${fileWidth}" height="${gridSize}"`;
+  if (!geometry) return [`<rect class="background" ${place} fill="${svgColor(uiParams.backgroundColor)}"/>`];
+  return [
+    `<defs>${svgGradient('background-gradient', uiParams.backgroundColor, uiParams.backgroundEndColor, geometry)}</defs>`,
+    `<rect class="background" ${place} fill="url(#background-gradient)"/>`,
+  ];
+}
+
 // The SVG file's text, as a list of lines from <svg ...> down to </svg>.
 // The library keeps one with each saved variation, to export it later.
-function drawingSVG() {
-  const colorText = svgColor(uiParams.foregroundColor);
+// `withBackground: false` leaves the background out: a sheet of iterations
+// has one background behind all of them (see sheetFile()).
+function drawingSVG({ withBackground = true } = {}) {
+  const geometry = gradientGeometry();
   const shapes = [];
 
   if (!isCellStyle()) {
-    shapes.push(...inkToSVG(colorText));
+    // with a gradient, every shade of ink is filled with the same gradient
+    // from Main to Main 2, defined once at the top
+    if (geometry) shapes.push(`<defs>${svgGradient('ink-gradient', uiParams.foregroundColor, uiParams.foregroundEndColor, geometry)}</defs>`);
+    shapes.push(...inkToSVG(geometry ? 'url(#ink-gradient)' : svgColor(uiParams.foregroundColor)));
   } else {
+    // each shape in the color of the spot it sits on, like on screen
     for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
-      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, `fill="${colorText}"`));
+      const paint = `fill="${svgColor(inkColorAt(centerX, centerY))}"`;
+      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, paint));
     }
   }
-  return svgFile(shapes, uiParams.backgroundColor);
+  return svgFile(shapes, { withBackground });
 }
 
 // The beginning and end of an SVG file the size of the drawing, around
 // `shapes`. The shapes are leaned like the grid on screen (skewX leans the
 // other way round than the Slant slider, like shearX). A slanted grid
 // reaches past its square on both sides, so the file is that much wider.
-// With a `backgroundColor`, the whole file is filled with it first; without
-// one, the file is see-through, like the grid and anchors files. The
-// background is marked class="background", on a line of its own, so the
-// library can leave it out when exporting without background.
-function svgFile(shapes, backgroundColor) {
+// `withBackground` fills the whole file with the background first (see
+// backgroundSVG()); without it, the file is see-through, like the grid
+// and anchors files.
+function svgFile(shapes, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
   const middle = gridSize / 2;
-  const backgroundShapes = backgroundColor
-    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
-    : [];
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
-    ...backgroundShapes,
+    ...(withBackground ? backgroundSVG(-overhang, fileWidth) : []),
     `<g transform="translate(${middle} ${middle}) skewX(${-uiParams.gridSlant}) translate(${-middle} ${-middle})">`,
     ...shapes,
     '</g>',
@@ -1719,7 +1869,8 @@ function numberOutline(number, x, y) {
 // the darkest the least. They are laid on top of each other, each a little
 // see-through, so where they overlap the ink is as dark as on screen.
 // Outlines don't show pixels, so the file stays sharp in Illustrator.
-function inkToSVG(colorText) {
+// `paint` is what they are filled with: a color, or url(#ink-gradient).
+function inkToSVG(paint) {
   // shade `level` holds everything at least that dark, rounded to the
   // nearest shade: from halfway between it and the shade below
   const levels = Array.from({ length: SVG_INK_LEVELS }, (unused, index) => index + 1);
@@ -1732,7 +1883,7 @@ function inkToSVG(colorText) {
     // the outlines are in ink pixels; the file counts in grid pixels
     const pathData = outlinesToPathData(outlines, TRACE_DECIMALS, 1 / inkScale());
     const opacity = layerOpacity(levels[index]).toFixed(4);
-    paths.push(`<path fill="${colorText}" fill-opacity="${opacity}" fill-rule="evenodd" d="${pathData}"/>`);
+    paths.push(`<path fill="${paint}" fill-opacity="${opacity}" fill-rule="evenodd" d="${pathData}"/>`);
   });
   return paths;
 }
@@ -2076,6 +2227,13 @@ function showWidthSlider() {
   slantController.show(uiParams.texture === 'pen');
 }
 
+// The Colors folder only shows what the Gradient switch uses: Main 2 and
+// Background 2 while it is on, Angle only for Linear.
+function showGradientControls() {
+  gradientAngleController.show(uiParams.gradient === 'Linear');
+  gradientColorControllers.forEach((controller) => controller.show(uiParams.gradient !== 'Off'));
+}
+
 // The Grid arrows: a new number of columns and rows. The anchors are
 // rebuilt to fit: in 'Glyph' the text is laid onto the new grid, in 'Shape'
 // and 'Animation' new random cells are picked.
@@ -2111,17 +2269,19 @@ function colorDistance(firstColor, secondColor) {
   return dist(firstColor.r, firstColor.g, firstColor.b, secondColor.r, secondColor.g, secondColor.b);
 }
 
-// The Colors arrows: three new colors. Main and Background are picked again
-// until they differ enough, so the drawing stays visible.
+// The Colors arrows: new colors, the gradients' other ends (Main 2 and
+// Background 2) included. They are picked again until both ends of the
+// drawing differ enough from both ends of the background, so the drawing
+// stays visible all over. The Gradient switch stays as it is.
 function randomizeColors() {
-  let mainColor;
-  let backgroundChoice;
+  let mainColors;
+  let backgroundColors;
   do {
-    mainColor = randomColor();
-    backgroundChoice = randomColor();
-  } while (colorDistance(mainColor, backgroundChoice) < MIN_COLOR_CONTRAST);
-  uiParams.foregroundColor = mainColor;
-  uiParams.backgroundColor = backgroundChoice;
+    mainColors = [randomColor(), randomColor()];
+    backgroundColors = [randomColor(), randomColor()];
+  } while (mainColors.some((mainColor) => backgroundColors.some((backgroundChoice) => colorDistance(mainColor, backgroundChoice) < MIN_COLOR_CONTRAST)));
+  [uiParams.foregroundColor, uiParams.foregroundEndColor] = mainColors;
+  [uiParams.backgroundColor, uiParams.backgroundEndColor] = backgroundColors;
   uiParams.accentColor = randomColor();
   // also recolors the panel in the new accent
   refreshPanel();
@@ -2144,17 +2304,51 @@ function randomizeDrift() {
   refreshPanel();
 }
 
-// "Randomize All": grid, anchors, spline, colors, drift and speed at once.
-// In 'Glyph' the text is new too; in the other modes it stays. The mode
-// always stays.
+// "Randomize All": grid, anchors, spline, colors, gradient, drift and speed
+// at once. In 'Glyph' the text is new too; in the other modes it stays. The
+// mode always stays.
 function randomizeAll() {
   // before the grid, so the anchors are built once, from the new text on
   // the new grid
   if (uiParams.anchorMode === 'Glyph') randomizeText();
   randomizeGrid();
   randomizeSpline();
+  // before the colors, which refresh the panel, so it shows both
+  randomizeGradient();
   randomizeColors();
   randomizeDrift();
+}
+
+// Randomize All also picks a gradient: Off, Linear or Radial, and a new
+// Angle. The Colors arrows leave the gradient as it is and only pick new
+// colors.
+function randomizeGradient() {
+  uiParams.gradient = random(gradientOptions);
+  uiParams.gradientAngle = randomSliderValue(gradientAngleRange);
+}
+
+// The arrows on the Gradient subheading in Colors: always a gradient
+// (Linear or Radial, never Off), a new Angle, and new other ends, Main 2
+// and Background 2. Like the Colors arrows, the new ends are kept different
+// enough from the background's and the drawing's colors, so the drawing
+// stays visible all over. Main and Background themselves stay as you set
+// them, so only the pairs with a new color are compared.
+function randomizeGradientSettings() {
+  uiParams.gradient = random(gradientOptions.filter((option) => option !== 'Off'));
+  uiParams.gradientAngle = randomSliderValue(gradientAngleRange);
+  let mainEndColor;
+  let backgroundEndChoice;
+  do {
+    mainEndColor = randomColor();
+    backgroundEndChoice = randomColor();
+  } while (
+    colorDistance(mainEndColor, uiParams.backgroundColor) < MIN_COLOR_CONTRAST
+    || colorDistance(mainEndColor, backgroundEndChoice) < MIN_COLOR_CONTRAST
+    || colorDistance(uiParams.foregroundColor, backgroundEndChoice) < MIN_COLOR_CONTRAST
+  );
+  uiParams.foregroundEndColor = mainEndColor;
+  uiParams.backgroundEndColor = backgroundEndChoice;
+  refreshPanel();
 }
 
 // Puts everything back the way the sketch opens: every value in the panel,
@@ -2171,13 +2365,10 @@ function resetEverything() {
   // the view stays too: Single stays Single, Multiple keeps its size
   uiParams.viewMode = viewMode;
   uiParams.iterationsPerRow = iterationsPerRow;
-  // Invert stays as it is. While it is on, the starting Main and Background
-  // are turned around too, so the drawing keeps its dark look.
+  // Invert stays as it is. While it is on, the starting colors are turned
+  // around too, so the drawing keeps its dark look.
   uiParams.invertColors = isInverted;
-  if (isInverted) {
-    uiParams.foregroundColor = invertedColor(uiParams.foregroundColor);
-    uiParams.backgroundColor = invertedColor(uiParams.backgroundColor);
-  }
+  if (isInverted) invertDrawingColors();
   // both remembered anchor counts start over, and Animation gets its own
   anchorCountPerMode = { Shape: startingParams.anchorCount, Animation: ANIMATION_ANCHOR_COUNT };
   lastGridMode = mode === 'Animation' ? 'Animation' : 'Shape';
@@ -2197,11 +2388,12 @@ function refreshPanel() {
   // is set again here as well
   applyAccentColor(uiParams.accentColor);
   // the switches and the Style field are this project's own, so they are told too
-  for (const control of [anchorModeController, viewModeController, paintModeController, textureController]) {
+  for (const control of [anchorModeController, viewModeController, paintModeController, textureController, gradientController]) {
     control.updateDisplay();
   }
   updateGuideControls();
   showWidthSlider();
+  showGradientControls();
   showModeControls();
   showColorTheme();
 }
@@ -2278,7 +2470,7 @@ function currentSheet() {
       inkPicture: inkToPicture(iteration.ink),
     })),
   };
-  const svg = new Blob([sheetFile(drawingSVG, uiParams.backgroundColor).join('\n')], { type: 'image/svg+xml' });
+  const svg = new Blob([sheetFile(drawingSVG, { withBackground: true }).join('\n')], { type: 'image/svg+xml' });
   const guides = {
     grid: sheetFile(gridSVG).join('\n'),
     anchors: sheetFile(anchorsSVG).join('\n'),
@@ -2293,18 +2485,17 @@ function currentSheet() {
 // in its spot, shrunk to fit: its width and height (the first line) are
 // swapped for its position and size on the sheet. The sheet is as wide as
 // the sheet's picture, slant overhang included, so the drawing and the
-// guides line up in the library's preview. With a backgroundColor, the
-// sheet gets a background behind everything, marked like svgFile()'s.
-function sheetFile(makeFile, backgroundColor) {
+// guides line up in the library's preview. `withBackground` puts one
+// background behind the whole sheet, like on screen (see backgroundSVG());
+// the iterations' own files then come without one.
+function sheetFile(makeFile, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
-  const shapes = backgroundColor
-    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
-    : [];
+  const shapes = withBackground ? backgroundSVG(-overhang, fileWidth) : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
       const { x, y, size, scaleFactor } = iterationPlace(index);
-      const file = makeFile();
+      const file = makeFile({ withBackground: false });
       // a slanted file is wider than its grid by the overhang on each side,
       // which sticks out of the iteration's spot, like on the canvas
       const left = round(x - slantOverhang() * scaleFactor, SVG_DECIMALS);
@@ -2440,7 +2631,7 @@ function saveClickedIteration() {
   const iteration = iterations[index];
   if (!iteration) return;
   withIteration(iteration, () => {
-    background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+    paintBackground();
     push();
     translate(gridLeft(), gridTop());
     slantGrid();
@@ -2635,6 +2826,20 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   const colors = gui.addFolder('Colors');
   addRandomizeIcon(colors, randomizeColors);
   moveColorControlsTo(colors);
+
+  // Below them, under a Gradient subheading with its own arrows, so it is
+  // easy to find: Off, Linear or Radial, and while it is on the other ends
+  // of the gradients; Angle only for Linear (see showGradientControls())
+  addSubheading(colors, 'Gradient', { randomize: randomizeGradientSettings });
+  gradientController = addSwitch(colors, uiParams, 'gradient', gradientOptions, showGradientControls, { secondary: true });
+  gradientAngleController = colors
+    .add(uiParams, 'gradientAngle', gradientAngleRange.min, gradientAngleRange.max, gradientAngleRange.step)
+    .name('Angle');
+  gradientColorControllers = [
+    colors.addColor(uiParams, 'foregroundEndColor', MAX_CHANNEL).name('Main 2'),
+    colors.addColor(uiParams, 'backgroundEndColor', MAX_CHANNEL).name('Background 2'),
+  ];
+  showGradientControls();
 
   const grid = gui.addFolder('Grid');
   // the eye and the Randomize arrows sit on the right of the folder's title
@@ -2983,9 +3188,16 @@ const startAnchorsSwitchSettings = {
 // accent keeps its color, so the guides stay recognisable.
 function invertColors() {
   uiParams.invertColors = !uiParams.invertColors;
-  uiParams.foregroundColor = invertedColor(uiParams.foregroundColor);
-  uiParams.backgroundColor = invertedColor(uiParams.backgroundColor);
+  invertDrawingColors();
   refreshPanel();
+}
+
+// Main and Background turned around, and the other ends of their
+// gradients, Main 2 and Background 2
+function invertDrawingColors() {
+  for (const colorName of ['foregroundColor', 'backgroundColor', 'foregroundEndColor', 'backgroundEndColor']) {
+    uiParams[colorName] = invertedColor(uiParams[colorName]);
+  }
 }
 
 function invertedColor({ r, g, b }) {

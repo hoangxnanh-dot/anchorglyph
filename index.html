@@ -855,8 +855,13 @@
         opacity: 1;
       }
       /* room below the last control of an open folder. A margin, not a
-         padding, so it folds away smoothly with the folder. */
-      .lil-gui.lil-root > .lil-children > .lil-gui:not(.lil-always-open) > .lil-children > :last-child {
+         padding, so it folds away smoothly with the folder. It goes to the
+         last control that shows: a hidden control (lil-gui hides it with
+         style="display: none", like Main 2 while Gradient is Off) can't
+         hold it, so the one above it gets it. Read: a control that isn't
+         hidden, with no control after it that isn't hidden. */
+      .lil-gui.lil-root > .lil-children > .lil-gui:not(.lil-always-open) > .lil-children
+        > :not([style*='display: none']):not(:has(~ :not([style*='display: none']))) {
         margin-bottom: 16px;
       }
 
@@ -876,6 +881,29 @@
         cursor: pointer;
       }
       .lil-title-icon:hover {
+        color: var(--ink-color);
+      }
+
+      /* THE SUBHEADINGS inside a folder, like Gradient in Colors (made by
+         addSubheading() in src/lib/gui.js): a thin line across, then the
+         name, as large as a folder title, with its arrows on the right. It
+         lines up with the rows below it. */
+      .lil-gui .lil-subheading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 10px var(--panel-padding) 4px calc(var(--panel-padding) + var(--arrow-width));
+        padding-top: 14px;
+        border-top: 1px solid var(--line-color);
+        color: var(--ink-color);
+        font-family: var(--title-font);
+        font-size: 16px;
+        font-weight: 500;
+      }
+      .lil-subheading .lil-title-icon {
+        color: var(--label-color);
+      }
+      .lil-subheading .lil-title-icon:hover {
         color: var(--ink-color);
       }
 
