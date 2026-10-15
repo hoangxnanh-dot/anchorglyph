@@ -1,4 +1,4 @@
-// Project: ANCYPH – Xuan Nam Anh Hoang & Quang Chien Nguyen @HTW-Berlin, 2026
+// Project: Anchorglyph – Xuan Nam Anh Hoang & Quang Chien Nguyen @HTW-Berlin, 2026
 //
 // Inspired by »SAND CREATURES« from Anders Hoff – inconvergent:
 // https://inconvergent.net/generative/sand-creatures/
