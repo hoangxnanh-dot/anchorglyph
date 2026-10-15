@@ -37,7 +37,7 @@ export const gridSize = 800;
 
 // a light paper, with dark ink on it
 export const backgroundColor = { r: 242, g: 242, b: 240 };
-export const foregroundColor = { r: 34, g: 34, b: 34 };
+export const foregroundColor = { r: 40, g: 40, b: 40 };
 // the guides: the lines between anchors, the anchor points and their numbers.
 // Also the color of selected cards and switched-on buttons in the library.
 // A green dark enough to read on the light paper.

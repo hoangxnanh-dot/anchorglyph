@@ -34,6 +34,8 @@ export const IMAGE_ICON = lineIcon('<rect x="3" y="3" width="18" height="18" rx=
 // SVG: a sheet of paper with a folded corner
 export const FILE_ICON = lineIcon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>');
 // Anchors: a curve with an anchor point and its two handles, as in Illustrator
+// Background: a square with stripes across it, like a filled area
+export const BACKGROUND_ICON = lineIcon('<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="13" x2="13" y2="3"/><line x1="5" y1="21" x2="21" y2="5"/><line x1="13" y1="21" x2="21" y2="13"/>');
 export const ANCHOR_ICON = lineIcon('<path d="M3 19C7 9 17 9 21 19"/><line x1="5" y1="12" x2="19" y2="12"/><rect x="10" y="10" width="4" height="4"/><circle cx="4" cy="12" r="1"/><circle cx="20" cy="12" r="1"/>');
 
 // The eye on the Grid and Anchors folders: open while they show,

@@ -9,7 +9,10 @@
 //   click a picture  opens a large preview. Escape, the x or a click beside
 //                    the preview closes it again. Below the picture:
 //                    Grid and Anchors show or hide the guides on the
-//                    picture, PNG and SVG export it as you see it there.
+//                    picture, Background shows or hides the background
+//                    (a checkerboard shows where it is see-through), and
+//                    PNG and SVG export it as you see it there. The field
+//                    left of PNG sets how many pixels the PNG has.
 //   Load (arrow to the right, bottom right of the picture)
 //                    brings the variation back exactly as it was saved,
 //                    paused. Space continues drawing from there.
@@ -18,8 +21,9 @@
 //   the name         click it to type a new one
 //   the checkbox     selects a variation. Shift-click a second checkbox to
 //                    select everything in between.
-//   Select all, Deselect all, Delete, PNG, SVG
-//                    work on all selected variations at once
+//   Select all       selects every variation; once all are selected it
+//                    turns into Deselect all, which clears the selection
+//   Delete, PNG, SVG work on all selected variations at once
 //
 // Variations are kept for this page visit only: closing or reloading the
 // page clears them. A saved drawing is a large picture, too large for the
@@ -45,7 +49,7 @@
 import { screenshotName, variationName, variationDigits, gridSize } from '../config.js';
 import { saveToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton, createProjectName } from './gui.js';
-import { ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, ANCHOR_ICON, dotGridIcon } from './icons.js';
+import { ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon } from './icons.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
 // camera, and the new card slides down into the list from above while the
@@ -59,6 +63,37 @@ const SLIDE_DURATION = 700;
 // The easing of the slide, as CSS writes it: fast at first, then slowing
 // down gently until it lands ("ease out quint", see https://easings.net).
 const SLIDE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+// The text in the library while nothing is saved: what the tool does and
+// how to start. One paragraph per line.
+const INTRO_PARAGRAPHS = [
+  'Start with type or click the grid to add points and drag to move them. Click a point to remove it.',
+  'Experiment with options in Controls. Generations can be saved in Library.',
+];
+
+// The keyboard shortcuts listed below the intro, as key and what it does.
+// The keys themselves are handled in src/sketch.js (keydown) and
+// src/lib/gui.js (G and H): change this list when you change those.
+const SHORTCUTS = [
+  { key: 'Space', action: 'Pause / Play' },
+  { key: 'S', action: 'Save Iteration' },
+  { key: 'R', action: 'Randomize All' },
+  { key: 'C', action: 'Reset All' },
+  { key: '← / →', action: 'New random anchors' },
+  { key: 'T', action: 'Open / close folders' },
+  { key: 'H', action: 'Hide guides' },
+  { key: 'G', action: 'Hide UI' },
+];
+
+// The sizes the preview's PNG export offers, in pixels wide and tall (a
+// slanted grid makes the picture a little wider). `starting` is the one
+// picked when the page opens.
+const PNG_RESOLUTIONS = [
+  { name: 'Low', size: 800 },
+  { name: 'Mid', size: 1600 },
+  { name: 'High', size: 2400, starting: true },
+  { name: 'MAXX', size: 5000 },
+];
 
 // How many dots across and down the project's mark at the bottom of the
 // library has, and how wide it is in pixels.
@@ -93,12 +128,12 @@ export function createLibrary({ capture, apply }) {
   const saveButton = makeButton('Save Iteration', saveCurrent, SAVE_ICON);
   saveButton.classList.add('library-save');
 
-  // these two only do something when there is at least one variation
-  const selectAllButton = makeButton('Select all', selectEverything);
-  const deselectAllButton = makeButton('Deselect all', deselectAll);
+  // one button for both: Select all, or Deselect all once everything is
+  // selected. It only does something when there is at least one variation.
+  const selectToggleButton = makeButton('Select all', toggleSelectAll);
   const selectionActions = document.createElement('div');
   selectionActions.className = 'library-selection-actions';
-  selectionActions.append(selectAllButton, deselectAllButton);
+  selectionActions.append(selectToggleButton);
 
   // these only do something when at least one variation is selected
   const deleteSelectedButton = makeButton('Delete', deleteSelected);
@@ -121,7 +156,26 @@ export function createLibrary({ capture, apply }) {
   const emptyHint = document.createElement('p');
   emptyHint.className = 'library-empty-hint';
   emptyHint.textContent = '»Save Iteration« keeps the drawing for this visit only.';
-  emptyMessage.append(emptyTitle, emptyHint);
+
+  // what the tool does, and how to start
+  const intro = document.createElement('div');
+  intro.className = 'library-intro';
+  for (const paragraph of INTRO_PARAGRAPHS) {
+    const line = document.createElement('p');
+    line.textContent = paragraph;
+    intro.appendChild(line);
+  }
+
+  // the shortcuts, one per line: Key — what it does
+  const shortcutList = document.createElement('ul');
+  shortcutList.className = 'library-shortcuts';
+  for (const { key, action } of SHORTCUTS) {
+    const row = document.createElement('li');
+    row.textContent = `${key} — ${action}`;
+    shortcutList.appendChild(row);
+  }
+
+  emptyMessage.append(emptyTitle, emptyHint, intro, shortcutList);
 
   const list = document.createElement('ul');
   list.className = 'library-list';
@@ -181,16 +235,29 @@ export function createLibrary({ capture, apply }) {
   anchorsLayer.className = 'library-preview-layer';
   previewStage.append(previewImage, gridLayer, anchorsLayer);
 
-  // the buttons below the picture: the two guides on the left, the exports
-  // on the right
+  // the buttons below the picture: the two guides and the background on
+  // the left, the exports on the right
   const gridToggle = makeButton('Grid', () => toggleLayer('showGrid'), dotGridIcon());
   const anchorsToggle = makeButton('Anchors', () => toggleLayer('showAnchors'), ANCHOR_ICON);
+  const backgroundToggle = makeButton('Background', () => toggleLayer('showBackground'), BACKGROUND_ICON);
   const guideButtons = document.createElement('div');
   guideButtons.className = 'library-preview-buttons';
-  guideButtons.append(gridToggle, anchorsToggle);
+  guideButtons.append(gridToggle, anchorsToggle, backgroundToggle);
+  // how many pixels the PNG gets. It stays as you set it from one preview
+  // to the next.
+  const resolutionField = document.createElement('select');
+  resolutionField.className = 'ui-button library-preview-resolution';
+  resolutionField.title = 'PNG resolution';
+  // only the names show; the pixels appear when the mouse rests on one
+  for (const { name, size, starting } of PNG_RESOLUTIONS) {
+    const option = new Option(name, size, starting, starting);
+    option.title = `${size} × ${size} pixels`;
+    resolutionField.add(option);
+  }
   const exportButtons = document.createElement('div');
   exportButtons.className = 'library-preview-buttons';
   exportButtons.append(
+    resolutionField,
     makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
     makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
   );
@@ -198,9 +265,11 @@ export function createLibrary({ capture, apply }) {
   previewFooter.className = 'library-preview-footer';
   previewFooter.append(guideButtons, exportButtons);
 
-  // the variation in the preview, and which guides show on it
+  // the variation in the preview, which guides show on it, and whether
+  // its background does. Background stays as you set it from one preview
+  // to the next.
   let previewVariation = null;
-  const previewLayers = { showGrid: false, showAnchors: false };
+  const previewLayers = { showGrid: false, showAnchors: false, showBackground: true };
 
   previewFrame.append(previewLabels, previewStage);
   previewHeader.append(previewName, closePreviewButton);
@@ -332,7 +401,6 @@ export function createLibrary({ capture, apply }) {
   function openPreview(variation) {
     previewVariation = variation;
     previewName.textContent = variation.name;
-    previewImage.src = variation.picture;
     previewImage.alt = variation.name;
     // like "Glyph canvas", or "Glyph sheet" for a whole sheet of iterations
     const { anchorMode, viewMode } = variation.data.settings;
@@ -366,12 +434,37 @@ export function createLibrary({ capture, apply }) {
     showPreviewLayers();
   }
 
-  // Shows the guides that are switched on, and lights up their buttons
-  function showPreviewLayers() {
+  // Shows the guides that are switched on, the picture with or without
+  // its background, and lights up their buttons
+  async function showPreviewLayers() {
     gridLayer.hidden = !previewLayers.showGrid;
     anchorsLayer.hidden = !previewLayers.showAnchors;
     gridToggle.classList.toggle('is-on', previewLayers.showGrid);
     anchorsToggle.classList.toggle('is-on', previewLayers.showAnchors);
+    backgroundToggle.classList.toggle('is-on', previewLayers.showBackground);
+    // the checkerboard behind a see-through picture, see index.html
+    previewStage.classList.toggle('is-see-through', !previewLayers.showBackground);
+    const variation = previewVariation;
+    const picture = await previewPicture(variation);
+    // the picture without background takes a moment to make: by then the
+    // preview may show another variation
+    if (variation === previewVariation) previewImage.src = picture;
+  }
+
+  // The drawing's picture as the preview shows it: the saved picture, or
+  // while Background is off, the saved SVG without its background
+  async function previewPicture(variation) {
+    if (previewLayers.showBackground) return variation.picture;
+    return svgToPicture(await previewSVGText(variation));
+  }
+
+  // The saved SVG's text, without its background while Background is off.
+  // The sketch puts every background on a line of its own, marked
+  // class="background", so those lines are simply left out.
+  async function previewSVGText(variation) {
+    const svgText = await variation.svg.text();
+    if (previewLayers.showBackground) return svgText;
+    return svgText.split('\n').filter((line) => !line.includes('class="background"')).join('\n');
   }
 
   // The guides that show in the preview right now, as SVG text
@@ -384,45 +477,43 @@ export function createLibrary({ capture, apply }) {
     return shown;
   }
 
-  // PNG and SVG in the preview: the file looks like the preview, with the
-  // guides that are showing drawn on top of the drawing.
+  // PNG and SVG in the preview: the file looks like the preview, with or
+  // without the background, and with the guides that are showing drawn on
+  // top of the drawing.
   async function exportPreview(format) {
     const variation = previewVariation;
-    const guides = visibleGuides();
     const filename = exportFileName(variation, format, 1);
 
-    // nothing on top: the saved file as it is
-    if (guides.length === 0) {
-      saveToDownloads(format === 'png' ? variation.picture : variation.svg, filename);
-      return;
-    }
+    // the guides' shapes go just before the drawing's closing </svg>. All
+    // files are the same size, so the shapes land in the right place.
+    // A guide's shapes sit between the end of its opening <svg ...> tag
+    // (the first >) and its closing </svg>.
+    const drawing = await previewSVGText(variation);
+    const end = drawing.lastIndexOf('</svg>');
+    const shapes = visibleGuides().map((guide) => guide.slice(guide.indexOf('>') + 1, guide.lastIndexOf('</svg>')));
+    const combined = new Blob([drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end)], { type: 'image/svg+xml' });
 
     if (format === 'svg') {
-      // the guides' shapes go just before the drawing's closing </svg>. All
-      // files are the same size, so the shapes land in the right place.
-      // A guide's shapes sit between the end of its opening <svg ...> tag
-      // (the first >) and its closing </svg>.
-      const drawing = await variation.svg.text();
-      const end = drawing.lastIndexOf('</svg>');
-      const shapes = guides.map((guide) => guide.slice(guide.indexOf('>') + 1, guide.lastIndexOf('</svg>')));
-      const combined = drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end);
-      saveToDownloads(new Blob([combined], { type: 'image/svg+xml' }), filename);
+      saveToDownloads(combined, filename);
       return;
     }
 
-    // PNG: the picture and the guides painted onto one canvas, at the
-    // picture's full size. The guides are drawings made of lines, so they
-    // stay sharp at any size.
-    const picture = await loadPicture(variation.picture);
+    // PNG: the SVG painted onto a canvas as large as the resolution field
+    // says. The SVG is made of outlines, so it stays sharp at any size,
+    // also far larger than the screen. The browser takes a moment for the
+    // largest sizes.
+    const fileLink = URL.createObjectURL(combined);
+    const picture = await loadPicture(fileLink);
+    URL.revokeObjectURL(fileLink);
+    const height = Number(resolutionField.value);
+    // a slanted grid makes the file wider than tall
+    const width = Math.round((height * picture.naturalWidth) / picture.naturalHeight);
     const canvas = document.createElement('canvas');
-    canvas.width = picture.naturalWidth;
-    canvas.height = picture.naturalHeight;
-    const context = canvas.getContext('2d');
-    context.drawImage(picture, 0, 0);
-    for (const guide of guides) {
-      context.drawImage(await loadPicture(svgToPicture(guide)), 0, 0, canvas.width, canvas.height);
-    }
-    saveToDownloads(canvas.toDataURL('image/png'), filename);
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
+    // toBlob copes with large pictures better than a data URL does
+    canvas.toBlob((file) => saveToDownloads(file, filename), 'image/png');
   }
 
   // SVG text turned into a data URL, so an <img> can show it
@@ -452,6 +543,15 @@ export function createLibrary({ capture, apply }) {
     selectedIds.clear();
     selectionStartId = null;
     updateSelectionDisplay();
+  }
+
+  function everythingSelected() {
+    return variations.length > 0 && selectedIds.size === variations.length;
+  }
+
+  function toggleSelectAll() {
+    if (everythingSelected()) deselectAll();
+    else selectEverything();
   }
 
   // A plain click ticks or unticks one checkbox. A shift-click selects
@@ -485,6 +585,8 @@ export function createLibrary({ capture, apply }) {
     for (const button of [deleteSelectedButton, exportPNGButton, exportSVGButton]) {
       button.disabled = nothingSelected;
     }
+    // the toggle says what a click will do next
+    selectToggleButton.textContent = everythingSelected() ? 'Deselect all' : 'Select all';
   }
 
   // variationName from src/config.js and a number: one higher than the
@@ -506,10 +608,9 @@ export function createLibrary({ capture, apply }) {
     list.replaceChildren(...variations.map(makeItem));
     const isEmpty = variations.length === 0;
     emptyMessage.hidden = !isEmpty;
-    // the buttons always show; with nothing saved, Select all and Deselect
-    // all are greyed out, like Delete, PNG and SVG while nothing is selected
-    selectAllButton.disabled = isEmpty;
-    deselectAllButton.disabled = isEmpty;
+    // the buttons always show; with nothing saved, Select all is greyed
+    // out, like Delete, PNG and SVG while nothing is selected
+    selectToggleButton.disabled = isEmpty;
     updateSelectionDisplay();
   }
 

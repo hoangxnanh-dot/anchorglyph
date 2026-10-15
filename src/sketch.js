@@ -46,6 +46,7 @@
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
 // Randomize All       New grid, anchors, spline, colors, drift and speed at once.
+//                     In 'Glyph' it also types a new text of 1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
@@ -132,6 +133,11 @@ const GRID_MIN = 1;
 const GRID_MAX = 39;
 const GRID_STEP = 1;
 const RANDOM_GRID_MIN = 3;
+
+// Randomize All in 'Glyph' mode also types a new text: this many characters
+// (at least min, at most max), each picked from randomTextCharacters.
+const randomTextLength = { min: 1, max: 3 };
+const randomTextCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
 // The range of the Slant slider in the Grid folder, in degrees. 0 is
 // upright; positive values lean the grid to the right, like italics, and
@@ -249,12 +255,28 @@ const MAX_LEAN = 0.9;
 
 // Grain, Chalk and Hair are made of tiny specks. Their sizes in pixels, and
 // how far apart Grain's two specks sit, as a share of the line's spread.
+// Hair's specks are made bigger again by sparseTextures below.
 const speckSizes = {
   chalkRadius: 0.5,
   hairRadius: 0.5,
   grainRadius: 0.7,
   grainSpread: 0.4,
 };
+
+// Hair and Fog draw fewer but bigger marks than the other textures: much
+// less work for the computer, so they draw faster, and the texture shows
+// more clearly. Each mark gets more ink to make up for the ones left out,
+// so the line gets about as dark as before.
+//   markShare  how many marks they draw, as a share of dotsPerStep
+//              (0.25 = a quarter). Lower is faster, but blotchier at first.
+//   sizeScale  how much bigger each mark is (2 = twice as wide): Hair's
+//              strokes get thicker, Fog's blobs wider
+const sparseTextures = {
+  hair: { markShare: 0.25, sizeScale: 2 },
+  fog: { markShare: 0.25, sizeScale: 1.5 },
+};
+// every other texture draws all its marks at their own size
+const fullTexture = { markShare: 1, sizeScale: 1 };
 
 // To find which way the curve runs at a point, the points this far before
 // and after it are compared (in segments, 1 = from one anchor to the next).
@@ -304,11 +326,12 @@ const CELL_PULSE_SCALE = 0.2;
 const CELL_PULSE_TURNS = 3;
 
 // How many ink pixels each pixel of the grid has, across and down, in Single
-// view. At 2 the ink layer has 4 times the pixels: lines and grain land
-// more precisely, so the PNG and SVG exports and a Retina screen show finer
-// detail. Higher costs time every frame. Multiple view keeps 1: its
+// view. At 3 the ink layer has 9 times the pixels (2400 × 2400 for an 800
+// grid): lines and grain land more precisely, so the PNG and SVG exports
+// and a Retina screen show finer detail, up to the High PNG size. Higher
+// costs time every frame; 2 is lighter. Multiple view keeps 1: its
 // iterations are small on screen, and there are many of them.
-const INK_SCALE = 2;
+const INK_SCALE = 3;
 
 // 'Glyph' mode: the empty space kept around the text, as a share of the grid
 // on each side.
@@ -1181,8 +1204,14 @@ function paintMarks(anchorPoints) {
   // it gets just as dark, for a fraction of the work. It only looks a little
   // blotchier in the first moments, before the blobs overlap.
   const fogThinning = uiParams.texture === 'fog' ? uiParams.textureWeight : 1;
+  // Hair and Fog: fewer, bigger marks (see sparseTextures)
+  const sparse = sparseTextures[uiParams.texture] ?? fullTexture;
+  const markCount = (uiParams.dotsPerStep * sparse.markShare) / fogThinning;
+  // the ink of the marks left out goes into the ones that are drawn. Bigger
+  // marks spread their ink wider, so they get a share more for that, too.
+  const markOpacity = (opacity * fogThinning) / (sparse.markShare * sparse.sizeScale);
 
-  for (let mark = 0; mark < uiParams.dotsPerStep / fogThinning; mark++) {
+  for (let mark = 0; mark < markCount; mark++) {
     const u = random(segments);
     const [x, y] = pointOnSpline(points, u);
     // the direction the curve runs here, and the one straight across it
@@ -1197,25 +1226,25 @@ function paintMarks(anchorPoints) {
     switch (uiParams.texture) {
       // tiny specks scattered across the line
       case 'chalk':
-        addInk(x + acrossX * offset, y + acrossY * offset, speckSizes.chalkRadius, opacity);
+        addInk(x + acrossX * offset, y + acrossY * offset, speckSizes.chalkRadius, markOpacity);
         break;
       // thin strokes straight across the line, like hairs
       case 'hair':
         addInkStroke(
           x + acrossX * offset, y + acrossY * offset,
           x - acrossX * offset, y - acrossY * offset,
-          speckSizes.hairRadius, opacity,
+          speckSizes.hairRadius * sparse.sizeScale, markOpacity,
         );
         break;
       // soft blobs scattered across the line
       case 'fog':
-        addInk(x + acrossX * offset, y + acrossY * offset, size, opacity * fogThinning);
+        addInk(x + acrossX * offset, y + acrossY * offset, size * sparse.sizeScale, markOpacity);
         break;
       // pairs of small specks on both sides of the line
       case 'grain': {
         const spread = offset * speckSizes.grainSpread;
-        addInk(x + acrossX * spread, y + acrossY * spread, speckSizes.grainRadius, opacity);
-        addInk(x - acrossX * spread, y - acrossY * spread, speckSizes.grainRadius, opacity);
+        addInk(x + acrossX * spread, y + acrossY * spread, speckSizes.grainRadius, markOpacity);
+        addInk(x - acrossX * spread, y - acrossY * spread, speckSizes.grainRadius, markOpacity);
         break;
       }
     }
@@ -1288,8 +1317,8 @@ function addInk(x, y, radius, opacity) {
   const size = layerSize(ink);
 
   // A mark less than a grid pixel wide covers one grid pixel's worth of ink
-  // pixels: a small square of them, centred on the mark. Hair, Chalk and
-  // Grain are made of these.
+  // pixels: a small square of them, centred on the mark. Chalk and Grain
+  // are made of these.
   if (radius < 1) {
     const left = Math.round(x * scale - scale / 2);
     const top = Math.round(y * scale - scale / 2);
@@ -1481,13 +1510,15 @@ function drawingSVG() {
 // other way round than the Slant slider, like shearX). A slanted grid
 // reaches past its square on both sides, so the file is that much wider.
 // With a `backgroundColor`, the whole file is filled with it first; without
-// one, the file is see-through, like the grid and anchors files.
+// one, the file is see-through, like the grid and anchors files. The
+// background is marked class="background", on a line of its own, so the
+// library can leave it out when exporting without background.
 function svgFile(shapes, backgroundColor) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
   const middle = gridSize / 2;
   const backgroundShapes = backgroundColor
-    ? [`<rect x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
+    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
     : [];
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
@@ -1846,7 +1877,8 @@ window.addEventListener('keydown', (event) => {
     // in 'Glyph' the text sets the anchors, so there is nothing to randomize
     if (uiParams.anchorMode !== 'Glyph') randomAnchors();
   } else if (event.key.toLowerCase() === 'r') {
-    // same as the "Randomize All" button: grid, anchors, spline, colors, drift and speed
+    // same as the "Randomize All" button: grid, anchors, spline, colors, drift
+    // and speed, and in 'Glyph' a new text
     randomizeAll();
   } else if (event.key.toLowerCase() === 'c') {
     // same as the "Reset All" button: every setting back to how the sketch opens
@@ -1973,6 +2005,16 @@ function randomizeColors() {
   refreshPanel();
 }
 
+// A new text for 'Glyph' mode: 1 to 3 random characters (see
+// randomTextLength). The Type here field shows it once the panel is
+// refreshed, which Randomize All does.
+function randomizeText() {
+  const length = Math.floor(random(randomTextLength.min, randomTextLength.max + 1));
+  let newText = '';
+  for (let index = 0; index < length; index++) newText += random([...randomTextCharacters]);
+  uiParams.text = newText;
+}
+
 // Random values for the Drift and Speed sliders in the Drift folder.
 function randomizeDrift() {
   uiParams.driftReach = randomSliderValue(driftReachRange);
@@ -1981,8 +2023,12 @@ function randomizeDrift() {
 }
 
 // "Randomize All": grid, anchors, spline, colors, drift and speed at once.
-// The mode and the text stay as they are.
+// In 'Glyph' the text is new too; in the other modes it stays. The mode
+// always stays.
 function randomizeAll() {
+  // before the grid, so the anchors are built once, from the new text on
+  // the new grid
+  if (uiParams.anchorMode === 'Glyph') randomizeText();
   randomizeGrid();
   randomizeSpline();
   randomizeColors();
@@ -2109,12 +2155,12 @@ function currentSheet() {
 // swapped for its position and size on the sheet. The sheet is as wide as
 // the sheet's picture, slant overhang included, so the drawing and the
 // guides line up in the library's preview. With a backgroundColor, the
-// sheet gets a background behind everything.
+// sheet gets a background behind everything, marked like svgFile()'s.
 function sheetFile(makeFile, backgroundColor) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
   const shapes = backgroundColor
-    ? [`<rect x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
+    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
     : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
@@ -2671,6 +2717,19 @@ function showText(element, text) {
 // The panels size themselves around the grid (see --panel-width in
 // index.html), so they are told how big the grid is.
 document.documentElement.style.setProperty('--grid-size', `${gridSize}px`);
+
+// The mode names on the start screen are written in the foregroundColor
+// from src/config.js. The Invert switch turns it around, like the drawing,
+// so the inverted color is handed over too (index.html picks it).
+const invertedForegroundColor = invertedColor(foregroundColor);
+document.documentElement.style.setProperty(
+  '--foreground-color',
+  `rgb(${foregroundColor.r}, ${foregroundColor.g}, ${foregroundColor.b})`,
+);
+document.documentElement.style.setProperty(
+  '--inverted-foreground-color',
+  `rgb(${invertedForegroundColor.r}, ${invertedForegroundColor.g}, ${invertedForegroundColor.b})`,
+);
 
 // Builds the control panel and the library, then starts p5. p5 looks for
 // the setup() and draw() you defined above and runs them.

@@ -13,6 +13,14 @@
         margin: 0;
         padding: 0;
       }
+      /* buttons and text fields ignore the letter spacing around them
+         unless they are told to take it */
+      button,
+      input,
+      select,
+      textarea {
+        letter-spacing: inherit;
+      }
       /* Anything hidden stays hidden, even where a rule below gives it a
          display of its own (buttons, labels, the title bar). */
       [hidden] {
@@ -26,17 +34,27 @@
         background: var(--page-color);
         /* anything without a font of its own */
         font-family: var(--text-font);
+        /* every text gets a little more room between its letters; only
+           the headlines keep their own, tighter spacing */
+        letter-spacing: var(--text-tracking);
       }
       canvas {
         display: block;
       }
 
       /* Every text on the page is Space Grotesk, straight from the fonts
-         folder: Regular for text and labels, Bold for headlines. */
+         folder: Regular for text and labels, Medium for the section
+         headlines, the folder titles, the Iteration title and the mode
+         names, Bold for the other headlines. */
       @font-face {
         font-family: 'SpaceGrotesk-Regular.otf';
         src: url('/fonts/SpaceGrotesk-Regular.otf');
         font-weight: 400;
+      }
+      @font-face {
+        font-family: 'SpaceGrotesk-Medium.otf';
+        src: url('/fonts/SpaceGrotesk-Medium.otf');
+        font-weight: 500;
       }
       @font-face {
         font-family: 'SpaceGrotesk-Bold.otf';
@@ -67,19 +85,26 @@
         --button-hover-color: rgb(224 224 220);
         --button-pressed-color: rgb(212 212 208);
         /* the black buttons: Save Iteration and the chosen mode */
-        --primary-color: rgb(24 24 24);
+        --primary-color: rgb(40 40 40);
         --primary-hover-color: rgb(56 56 54);
         --primary-text-color: rgb(250 250 248);
         /* the track of the Playback bar */
         --track-color: rgb(212 212 208);
         /* until the sketch sets it from src/config.js */
         --accent-color: rgb(20 196 40);
+        /* the mode names on the start screen; the sketch sets it from
+           foregroundColor in src/config.js */
+        --foreground-color: rgb(34 34 34);
         /* the Load button on the pictures, and the veil behind the large
            preview: see-through versions of the card and the page */
         --load-button-color: rgb(255 255 255 / 0.92);
         --backdrop-color: rgb(236 236 232 / 0.72);
 
         --heading-font: 'SpaceGrotesk-Bold.otf', sans-serif;
+        /* the section headlines (Library, Modes, Controls, Playback), the
+           folder titles, the Iteration title in the title bar and the
+           mode names on the start screen */
+        --title-font: 'SpaceGrotesk-Medium.otf', sans-serif;
         --text-font: 'SpaceGrotesk-Regular.otf', sans-serif;
         /* the small labels in capitals, like on a technical drawing. The
            same font as the text for now; set another one here to change
@@ -126,7 +151,9 @@
         /* the size and spacing of the headlines: Library, Modes, Controls,
            Playback, and Iteration in the title bar */
         --headline-size: 20px;
-        --headline-tracking: -0.2px;
+        --headline-tracking: 0.1px;
+        /* added to the letter spacing of every text except the headlines */
+        --text-tracking: 0.3px;
         /* the quiet ring around a button reached with the Tab key, instead
            of the browser's blue one */
         --focus-ring: 2px solid var(--button-pressed-color);
@@ -151,6 +178,8 @@
         --track-color: rgb(43 43 47);
         --load-button-color: rgb(0 0 0 / 0.92);
         --backdrop-color: rgb(19 19 23 / 0.72);
+        /* the mode names: foregroundColor turned around, set by the sketch */
+        --foreground-color: var(--inverted-foreground-color);
       }
 
       /* THE BUTTONS outside of lil-gui's own rows, in both panels and the
@@ -207,7 +236,7 @@
       .library-preview-labels {
         font-family: var(--label-font);
         font-size: var(--label-size);
-        letter-spacing: var(--label-tracking);
+        letter-spacing: calc(var(--label-tracking) + var(--text-tracking));
         text-transform: uppercase;
       }
       /* the project's name with its subtitle below it, made by
@@ -266,9 +295,10 @@
       }
       /* the same size as the Library and Modes headlines */
       .top-bar-title {
-        font-family: var(--heading-font);
+        font-family: var(--title-font);
         font-size: var(--headline-size);
-        letter-spacing: var(--headline-tracking);
+        font-weight: 500;
+        letter-spacing: calc(var(--headline-tracking) + var(--text-tracking));
       }
       .top-bar-subtitle {
         justify-self: end;
@@ -343,7 +373,7 @@
         font-size: clamp(44px, 5vw, 84px);
         font-weight: 700;
         line-height: 1.15;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.01em;
         /* the \n in the text starts a new line */
         white-space: pre-line;
       }
@@ -411,10 +441,11 @@
         color: var(--muted-color);
       }
       .start-mode-name {
-        font-family: var(--heading-font);
+        color: var(--foreground-color);
+        font-family: var(--title-font);
         font-size: clamp(32px, 3vw, 48px);
-        font-weight: 700;
-        letter-spacing: -0.01em;
+        font-weight: 500;
+        letter-spacing: calc(-0.01em + var(--text-tracking));
       }
       .start-mode-arrow {
         display: flex;
@@ -519,9 +550,9 @@
         padding: 0 var(--panel-padding);
         background: none;
         color: var(--ink-color);
-        font-family: var(--heading-font);
+        font-family: var(--title-font);
         font-size: var(--headline-size);
-        font-weight: 700;
+        font-weight: 500;
         letter-spacing: var(--headline-tracking);
       }
       /* the first headline of each panel sits a little below the title bar */
@@ -678,9 +709,9 @@
         align-items: center;
         padding: 0 var(--panel-padding);
         border: none;
-        font-family: var(--heading-font);
+        font-family: var(--title-font);
         font-size: 16px;
-        font-weight: 700;
+        font-weight: 500;
       }
       /* the arrow: the corner of a small square, turned to point down while
          the folder is open and right while it is closed. It takes
@@ -913,10 +944,13 @@
       .library-empty-hint {
         padding-left: 22px;
       }
-      .library-empty-title {
+      /* "Nothing saved yet." and each intro paragraph get a dot in front */
+      .library-empty-title,
+      .library-intro p {
         position: relative;
       }
-      .library-empty-title::before {
+      .library-empty-title::before,
+      .library-intro p::before {
         content: '';
         position: absolute;
         left: 2px;
@@ -928,6 +962,24 @@
       }
       .library-empty-hint {
         margin-top: 10px;
+        color: var(--muted-color);
+      }
+      /* below the hint: what the tool does, then the keyboard shortcuts.
+         They line up with the text above, after its dot. */
+      .library-intro,
+      .library-shortcuts {
+        margin-top: 24px;
+      }
+      .library-intro p,
+      .library-shortcuts {
+        padding-left: 22px;
+      }
+      .library-intro p + p {
+        margin-top: 10px;
+      }
+      /* the shortcuts are as quiet as the hint */
+      .library-shortcuts {
+        list-style: none;
         color: var(--muted-color);
       }
 
@@ -1115,7 +1167,7 @@
       .library-preview-name {
         font-family: var(--heading-font);
         font-size: 26px;
-        letter-spacing: -0.3px;
+        letter-spacing: calc(-0.3px + var(--text-tracking));
       }
       .library-preview-header .ui-button {
         width: var(--large-button-height);
@@ -1153,6 +1205,11 @@
         object-fit: contain;
         border-radius: var(--radius);
       }
+      /* with Background off, a checkerboard behind the picture shows
+         where it is see-through */
+      .library-preview-stage.is-see-through .library-preview-image {
+        background: repeating-conic-gradient(var(--button-color) 0% 25%, var(--card-color) 0% 50%) 0 0 / 16px 16px;
+      }
       /* the grid and the anchors, exactly over the picture. Clicks go
          through them. */
       .library-preview-layer {
@@ -1163,12 +1220,22 @@
         object-fit: contain;
         pointer-events: none;
       }
-      /* below the frame: Grid and Anchors on the left, PNG and SVG on
-         the right */
+      /* below the frame: Grid, Anchors and Background on the left, PNG
+         and SVG on the right */
       .library-preview-footer {
         display: flex;
+        flex-wrap: wrap;
         justify-content: space-between;
         gap: 8px;
+        /* never wider than the picture: otherwise the frame would stretch
+           and the guides would no longer sit on the drawing. Buttons that
+           don't fit move to a second row. */
+        width: 0;
+        min-width: 100%;
+      }
+      /* PNG and SVG stay on the right, also on a row of their own */
+      .library-preview-buttons:last-child {
+        margin-left: auto;
       }
       .library-preview-buttons {
         display: flex;
@@ -1179,7 +1246,24 @@
         padding: 0 20px;
         gap: 10px;
       }
-      /* a guide that is showing: its button tinted in the accent color */
+      /* the PNG resolution field: a grey button that opens a short list.
+         The small arrow on the right says it opens. Written with
+         .library-preview-footer in front, so the grey buttons' own padding
+         and hover color don't wipe out the arrow. */
+      .library-preview-footer .library-preview-resolution {
+        appearance: none;
+        padding-right: 36px;
+        background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+          linear-gradient(135deg, currentColor 50%, transparent 50%);
+        background-position: right 20px center, right 16px center;
+        background-size: 4px 4px;
+        background-repeat: no-repeat;
+        color: var(--ink-color);
+        font: inherit;
+        cursor: pointer;
+      }
+      /* a guide or the background that is showing: its button tinted in
+         the accent color */
       .library-preview-footer .ui-button.is-on {
         background: color-mix(in srgb, var(--accent-color) 22%, var(--card-color));
       }
