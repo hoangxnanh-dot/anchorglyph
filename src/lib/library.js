@@ -77,8 +77,8 @@ const SLIDE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 // The text in the library while nothing is saved: what the tool does and
 // how to start. One paragraph per line.
 const INTRO_PARAGRAPHS = [
-  'Start with type or click the grid to add points and drag to move them. Click a point to remove it.',
-  'Experiment with options in Controls. Generations can be saved in Library.',
+  'Generate anchor points with type or click inside the grid to add points and drag to move them. Click a point to remove it.',
+  'Experiment with options in Controls. Iterations can be saved in Library.',
 ];
 
 // The keyboard shortcuts listed below the intro, as key and what it does.

@@ -63,7 +63,11 @@ export function createGUI({
   // text, font and size, added to `container`: the panel itself or a folder
   const addTextControls = (container) => {
     const controllers = [];
-    if ('text' in params) controllers.push(container.add(params, 'text').name('Type here').onChange(onTextChange));
+    if ('text' in params) {
+      const textController = container.add(params, 'text').name('Type here').onChange(onTextChange);
+      selectAllOnFocus(textController.$input);
+      controllers.push(textController);
+    }
     if ('font' in params) controllers.push(container.add(params, 'font', fontOptions).onChange(onFontChange));
     if ('textSize' in params) controllers.push(container.add(params, 'textSize', TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max, TEXT_SIZE_RANGE.step).name('Size').onChange(onTextSizeChange));
     return controllers;
@@ -176,6 +180,23 @@ export function createGUI({
   });
 
   return gui;
+}
+
+// Clicking into the field marks all of its text, so typing replaces it and
+// you don't have to delete the old word first. The text stays until you type.
+function selectAllOnFocus(input) {
+  // Safari and Chrome place the cursor when the mouse button comes up, which
+  // would undo the selection, so the first mouseup after focusing is skipped.
+  // Later clicks place the cursor as usual, to fix a single letter.
+  let justFocused = false;
+  input.addEventListener('focus', () => {
+    input.select();
+    justFocused = true;
+  });
+  input.addEventListener('mouseup', (event) => {
+    if (justFocused) event.preventDefault();
+    justFocused = false;
+  });
 }
 
 // Moves a slider back to its starting value over RESET_DURATION, a little
