@@ -482,7 +482,7 @@ export function addEyeToggle(folder, params, property, onChange = () => {}) {
   return { updateDisplay };
 }
 
-// A small headline inside a folder, with a thin line above it, to start a
+// A small headline inside a folder, with some room above it, to start a
 // group of controls of its own, like Gradient in the Colors folder:
 //
 //   addSubheading(colors, 'Gradient', { randomize: randomizeGradient });
