@@ -35,9 +35,11 @@
 // Click an anchor     (without dragging) remove it.
 // Single / Multiple   In the Modes section: one drawing in the middle, or
 //                     several iterations at once (Per Row sets how many).
-//                     Each iteration joins the anchors in its own order and
-//                     picks its own Drift and Speed; the grid, the anchor
-//                     positions, the style and the colors stay yours.
+//                     The first one (top left) is always your drawing from
+//                     Single view. Every other iteration joins the anchors
+//                     in its own order and picks its own Drift and Speed;
+//                     the grid, the anchor positions, the style and the
+//                     colors stay yours.
 //                     In Multiple, a click on one iteration saves it to the
 //                     library; Save Iteration saves the whole sheet.
 // Double-click a name In the control panel: put that setting back to where
@@ -75,7 +77,8 @@
 //                     it to jump to another moment of the loop.
 // R – Randomize All   Randomize EVERYTHING.
 // C – Reset All       Every setting back to how the sketch opens (same as
-//                     the Reset All button). The mode stays.
+//                     the Reset All button), Single view included. The
+//                     mode and Invert stay.
 // Left / Right        New random anchors (same as the Anchors arrows), not in 'Glyph'.
 // S – Save Iteration  Keep the drawing in the library (same as the library's
 //                     Save Iteration button). It also keeps a video of the
@@ -834,12 +837,34 @@ function withIteration(iteration, action) {
 
 // Multiple view: a fresh set of iterations, Per Row × Per Row of them. Each
 // starts from your anchors on your grid, in your style and colors, with an
-// empty ink layer. What it changes: the anchors are joined in a new order,
-// Drift and Speed get random values (see iterationRanges), and every anchor
-// gets a new heading, restlessness and rhythm, so it drifts its own way.
+// empty ink layer.
+// The first one (top left) is always your own drawing, as in Single view:
+// your anchors in your order, your Drift and Speed and your noise, so it
+// draws the same shape. In the others, the anchors are joined in a new
+// order, Drift and Speed get random values (see iterationRanges), and every
+// anchor gets a new heading, restlessness and rhythm, so it drifts its own
+// way.
 function buildIterations() {
+  // your drawing needs a noise seed of its own for the first iteration to
+  // drift the same way; one that never got one (like the text's anchors in
+  // 'Glyph') gets it now
+  if (currentNoiseSeed === undefined) {
+    currentNoiseSeed = Date.now();
+    noiseSeed(currentNoiseSeed);
+  }
   const count = uiParams.iterationsPerRow ** 2;
   iterations = Array.from({ length: count }, (unused, index) => {
+    if (index === 0) {
+      return {
+        ink: newInkLayer(1),
+        anchors: anchors.map((anchor) => ({ ...anchor })),
+        // no settings of its own: it keeps following your Drift and Speed
+        settings: {},
+        noiseSeed: currentNoiseSeed,
+        loopStep: 0,
+        stepsWaiting: 0,
+      };
+    }
     const ownAnchors = anchors.map((anchor) => ({
       ...anchor,
       heading: random(TWO_PI),
@@ -2352,19 +2377,16 @@ function randomizeGradientSettings() {
 }
 
 // Puts everything back the way the sketch opens: every value in the panel,
-// the colors and the guides, with fresh anchors and a running animation.
-// Only the mode, the view (Single or Multiple) and the Invert switch stay:
-// in 'Glyph' the anchors come from the (reset) text, in 'Shape' and
-// 'Animation' they are new random ones.
+// the colors and the guides, the view (back to Single, and Per Row to its
+// start), with fresh anchors and a running animation. Only the mode and
+// the Invert switch stay: in 'Glyph' the anchors come from the (reset)
+// text, in 'Shape' and 'Animation' they are new random ones.
 function resetEverything() {
-  const { anchorMode: mode, viewMode, iterationsPerRow, invertColors: isInverted } = uiParams;
+  const { anchorMode: mode, invertColors: isInverted } = uiParams;
   for (const [settingName, value] of Object.entries(startingParams)) {
     uiParams[settingName] = structuredClone(value);
   }
   uiParams.anchorMode = mode;
-  // the view stays too: Single stays Single, Multiple keeps its size
-  uiParams.viewMode = viewMode;
-  uiParams.iterationsPerRow = iterationsPerRow;
   // Invert stays as it is. While it is on, the starting colors are turned
   // around too, so the drawing keeps its dark look.
   uiParams.invertColors = isInverted;
