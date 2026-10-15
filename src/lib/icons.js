@@ -46,10 +46,20 @@ export const EYE_OPEN_ICON = lineIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 
 export const EYE_CLOSED_ICON = lineIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="21" x2="21" y2="3"/>');
 // Randomize: two crossing arrows, the "shuffle" sign of music players
 export const RANDOMIZE_ICON = lineIcon('<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>');
-// Reset All and Restart: an arrow turning back on itself
+// Restart: an arrow turning back on itself
 export const RESTART_ICON = lineIcon('<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>');
+// Reset All: two arrows chasing each other around a circle, so it doesn't
+// look like Restart
+export const RESET_ICON = lineIcon('<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><polyline points="16 16 21 16 21 21"/>');
 // More: three dots in a row
 export const MORE_ICON = lineIcon('<circle cx="5" cy="12" r="0.75"/><circle cx="12" cy="12" r="0.75"/><circle cx="19" cy="12" r="0.75"/>');
+
+// The buttons that fold the panels away, at both ends of the title bar.
+// Library: two papers stacked, a sheet in front and the edge of the one
+// behind it.
+export const LIBRARY_ICON = lineIcon('<rect x="3" y="7" width="14" height="14" rx="1.5"/><path d="M7 3h12.5A1.5 1.5 0 0 1 21 4.5V17"/>');
+// Controls: three lines, the "menu" sign
+export const MENU_ICON = lineIcon('<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>');
 
 // Playback: filled shapes, so they read as buttons from afar
 // Play: a triangle pointing right. Shown while the drawing is paused.
@@ -60,7 +70,7 @@ export const PAUSE_ICON = lineIcon('<rect x="6" y="4" width="4" height="16" fill
 export const STOP_ICON = lineIcon('<rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/>');
 
 // A square of dots, `dotsPerSide` across and down, `size` pixels wide: the
-// project's mark in the title bar and the library, and the Grid button's
+// project's mark at the bottom of the library, and the Grid button's
 // icon. The dots sit in the middle of equal cells.
 export function dotGridIcon(dotsPerSide = MARK_DOTS, size = ICON_SIZE) {
   const cell = ICON_FIELD / dotsPerSide;

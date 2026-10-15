@@ -1,4 +1,4 @@
-// Project: ANCYPH – Xuan Nam Anh Hoang & Quang Chien Nguyen @HTW-Berlin, 2026
+// Project: Anchorglyph – Xuan Nam Anh Hoang & Quang Chien Nguyen @HTW-Berlin, 2026
 //
 // Inspired by »SAND CREATURES« from Anders Hoff – inconvergent:
 // https://inconvergent.net/generative/sand-creatures/
@@ -35,9 +35,11 @@
 // Click an anchor     (without dragging) remove it.
 // Single / Multiple   In the Modes section: one drawing in the middle, or
 //                     several iterations at once (Per Row sets how many).
-//                     Each iteration joins the anchors in its own order and
-//                     picks its own Drift and Speed; the grid, the anchor
-//                     positions, the style and the colors stay yours.
+//                     The first one (top left) is always your drawing from
+//                     Single view. Every other iteration joins the anchors
+//                     in its own order and picks its own Drift and Speed;
+//                     the grid, the anchor positions, the style and the
+//                     colors stay yours.
 //                     In Multiple, a click on one iteration saves it to the
 //                     library; Save Iteration saves the whole sheet.
 // Double-click a name In the control panel: put that setting back to where
@@ -45,8 +47,9 @@
 //
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
-// Randomize All       New grid, anchors, spline, colors, drift and speed at once.
-//                     In 'Glyph' it also types a new text of 1 to 3 characters.
+// Randomize All       New grid, anchors, spline, colors, gradient, drift and
+//                     speed at once. In 'Glyph' it also types a new text of
+//                     1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
@@ -74,7 +77,8 @@
 //                     it to jump to another moment of the loop.
 // R – Randomize All   Randomize EVERYTHING.
 // C – Reset All       Every setting back to how the sketch opens (same as
-//                     the Reset All button). The mode stays.
+//                     the Reset All button), Single view included. The
+//                     mode and Invert stay.
 // Left / Right        New random anchors (same as the Anchors arrows), not in 'Glyph'.
 // S – Save Iteration  Keep the drawing in the library (same as the library's
 //                     Save Iteration button). It also keeps a video of the
@@ -95,18 +99,22 @@
 
 import p5 from 'p5';
 import {
-  createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, applyAccentColor, createSwitchButton,
+  createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, addSubheading, applyAccentColor, createSwitchButton,
   makeButton, makeIconButton, setButtonIcon,
 } from './lib/gui.js';
 import { createLibrary } from './lib/library.js';
-import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle, projectSubtitle } from './config.js';
+import { createPanelButtons } from './lib/panels.js';
+import {
+  gridSize, backgroundColor, foregroundColor, accentColor, foregroundEndColor, backgroundEndColor,
+  startingText, projectTitle, projectSubtitle,
+} from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
 import { traceOutlines, outlinesToPathData } from './lib/trace.js';
 import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
-  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, dotGridIcon,
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, RESET_ICON,
 } from './lib/icons.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
@@ -178,6 +186,10 @@ const MIN_COLOR_CONTRAST = 150;
 // The highest value a color channel can have. Inverting a channel turns
 // 0 into this and this into 0.
 const MAX_CHANNEL = 255;
+// The Gradient switch's options, and the range of its Angle slider, in
+// degrees.
+const gradientOptions = ['Off', 'Linear', 'Radial'];
+const gradientAngleRange = { min: 0, max: 360, step: 1 };
 
 // The values the control panel changes. The colors start at whatever you set
 // in src/config.js, and are { r, g, b } objects with channels from 0 to 255.
@@ -222,6 +234,13 @@ const uiParams = {
   backgroundColor,
   accentColor,
   invertColors: false, // the Invert switch: true = Main and Background turned around, dark panels
+  // Gradient, in the Colors folder: 'Off', 'Linear' or 'Radial'. When it
+  // is on, the drawing runs from Main to Main 2 and the background from
+  // Background to Background 2 (see gradientGeometry()).
+  gradient: 'Off',
+  gradientAngle: 90,   // Linear: the direction, in degrees: 0 = left to right, 90 = top to bottom
+  foregroundEndColor,
+  backgroundEndColor,
 };
 
 // A copy of every value as the sketch opens with it, for "Reset All". It is a
@@ -379,10 +398,23 @@ const SVG_FULL_OPACITY = 255;
 // Full opacity, for the parts of the guides that are otherwise solid.
 const SOLID = 255;
 
-// How close (in pixels) the mouse has to be to an anchor to grab it, and how
-// far it has to move before a click counts as a drag.
+// How close (in pixels on screen) the mouse has to be to an anchor to grab
+// it, and how far it has to move before a click counts as a drag.
 const GRAB_RADIUS = 10;
 const DRAG_THRESHOLD = 3;
+
+// The grid shrinks when the window is too small for it (see fitView()).
+// This much room, in pixels on screen, stays free above and below the grid
+// for its labels, and on a narrow window this much more between the labels
+// below the grid and the dock.
+const STAGE_LABEL_ROOM = 26;
+const DOCK_GAP = 6;
+// The most pixels the canvas may have on a phone or tablet. iPhones and
+// iPads don't draw a larger canvas at all (4096 × 4096). A small screen
+// shows a large canvas shrunk, so there the canvas gets a little less sharp
+// to stay below this. Computers draw far larger canvases, so they always
+// get the full sharpness.
+const MAX_TOUCH_CANVAS_PIXELS = 4096 * 4096;
 
 // The anchors, in the order the spline visits them.
 // Each one: { row, column, jx, jy, fx, fy, dx, dy, noise, heading, restlessness, phase }
@@ -434,8 +466,8 @@ let lastGridMode = 'Shape';
 // The ink layer: one number per ink pixel, 0 = empty, 1 = fully inked.
 // It is square, with INK_SCALE ink pixels per grid pixel each way (1 in
 // Multiple view). `inkImages` are the pictures it is turned into for the
-// screen, one per layer size, with the Main color they were last given;
-// see drawInk().
+// screen, one per layer size, with the colors they were last given (Main,
+// or the gradient); see drawInk().
 let ink;
 const inkImages = new Map();
 
@@ -448,6 +480,9 @@ let videoExport = null;
 // panel controls the code changes or hides after they are made.
 let panel;
 let library;
+// The buttons in the title bar that fold the panels away, see
+// src/lib/panels.js.
+let panelButtons;
 // The title bar across the top of the window, see createTopBar(), and how
 // tall it is. The height is measured once: a hidden bar measures 0.
 let topBar;
@@ -467,11 +502,21 @@ let startTransition = null;
 // off, so the start screen shows the drawing alone. The eyes in the panel
 // are separate.
 const startGuides = { showGrid: false, showAnchors: false };
-// Where the grid's left edge is on the start screen: in the middle of the
-// start screen's left part. Measured while the start screen shows, see
-// updateStartTransition().
+// Where the grid's left edge is on the start screen: where it will be on the
+// main screen (see mainGridLeft()). Measured while the start screen shows,
+// see updateStartTransition().
 let startGridLeft = 0;
-let playbackControls;
+// Restart, Play/Pause, Stop and the loop bar: one set in the control panel
+// and one in the dock, kept the same (see createPlaybackControls()).
+const playbackControls = [];
+// The dock below the grid on narrow windows, see createDock().
+let dock;
+// How the grid is shown, see fitView(). `scale` is how big one pixel of
+// the sketch is on screen: 1 when the grid fits at its real size, less
+// when the window is too small. `gridTop` is where the grid starts, in the
+// sketch's pixels. `libraryWidth` and `controlsWidth` are the panels'
+// widths, as last measured.
+const view = { scale: 1, gridTop: 0, libraryWidth: 0, controlsWidth: 0 };
 let anchorModeController;
 let glyphControllers = [];
 let columnsController;
@@ -484,6 +529,9 @@ let anchorsEye;
 let lineWidthController;
 let shapeWidthController;
 let paintModeController;
+let gradientController;
+let gradientAngleController;
+let gradientColorControllers = [];
 let viewModeController;
 let iterationsPerRowController;
 let textureController;
@@ -492,10 +540,9 @@ let invertSwitch;
 
 window.setup = async function setup() {
   createCanvas(windowWidth, windowHeight);
-  // at least as many canvas pixels as ink pixels, also on screens that
-  // aren't Retina, so the saved picture keeps the ink's full detail
-  pixelDensity(max(pixelDensity(), INK_SCALE));
   ink = newInkLayer(INK_SCALE);
+  // the canvas's size and sharpness, and the grid's size and place
+  fitView();
   // always the starting font from src/config.js: the panel has no font picker
   selectedFont = await applyFont(defaultFont);
   // the starting mode decides where the first anchors come from
@@ -523,7 +570,7 @@ window.draw = function draw() {
 
   updateStartTransition();
 
-  background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+  paintBackground();
   if (isMultipleView()) drawIterations();
   else drawSingle(stepsThisFrame());
 
@@ -609,7 +656,9 @@ function anchorsMovedBy(savedAnchors, moves) {
 // works out how far that has come: slow at first, fast in the middle, slow
 // at the end (cubicInOut).
 function updateStartTransition() {
-  if (startScreenAmount > 0 || startTransition) startGridLeft = (startScreen.stageWidth() - gridSize) / 2;
+  // the start screen shows the grid exactly where it will be on the main
+  // screen, so it doesn't move when a mode is picked
+  if (startScreenAmount > 0 || startTransition) startGridLeft = mainGridLeft();
   if (!startTransition) return;
   const { from, to, startTime } = startTransition;
   const progress = constrain((millis() - startTime) / START_TRANSITION_DURATION, 0, 1);
@@ -788,12 +837,34 @@ function withIteration(iteration, action) {
 
 // Multiple view: a fresh set of iterations, Per Row × Per Row of them. Each
 // starts from your anchors on your grid, in your style and colors, with an
-// empty ink layer. What it changes: the anchors are joined in a new order,
-// Drift and Speed get random values (see iterationRanges), and every anchor
-// gets a new heading, restlessness and rhythm, so it drifts its own way.
+// empty ink layer.
+// The first one (top left) is always your own drawing, as in Single view:
+// your anchors in your order, your Drift and Speed and your noise, so it
+// draws the same shape. In the others, the anchors are joined in a new
+// order, Drift and Speed get random values (see iterationRanges), and every
+// anchor gets a new heading, restlessness and rhythm, so it drifts its own
+// way.
 function buildIterations() {
+  // your drawing needs a noise seed of its own for the first iteration to
+  // drift the same way; one that never got one (like the text's anchors in
+  // 'Glyph') gets it now
+  if (currentNoiseSeed === undefined) {
+    currentNoiseSeed = Date.now();
+    noiseSeed(currentNoiseSeed);
+  }
   const count = uiParams.iterationsPerRow ** 2;
   iterations = Array.from({ length: count }, (unused, index) => {
+    if (index === 0) {
+      return {
+        ink: newInkLayer(1),
+        anchors: anchors.map((anchor) => ({ ...anchor })),
+        // no settings of its own: it keeps following your Drift and Speed
+        settings: {},
+        noiseSeed: currentNoiseSeed,
+        loopStep: 0,
+        stepsWaiting: 0,
+      };
+    }
     const ownAnchors = anchors.map((anchor) => ({
       ...anchor,
       heading: random(TWO_PI),
@@ -1437,32 +1508,27 @@ function addInkStroke(startX, startY, endX, endY, radius, opacity) {
   }
 }
 
-// Turns the ink layer into an image in the Main color, transparent where
-// there is no ink, so color changes in the panel apply right away.
+// Turns the ink layer into an image in the Main color (or the gradient from
+// Main to Main 2), transparent where there is no ink, so color changes in
+// the panel apply right away.
 function drawInk() {
-  const { r, g, b } = uiParams.foregroundColor;
   // One picture per layer size, made the first time it is needed. Its
   // pixels are read once (loadPixels), after that only written to.
   const size = layerSize(ink);
   if (!inkImages.has(size)) {
     const picture = createImage(size, size);
     picture.loadPixels();
-    inkImages.set(size, { picture, colorText: '' });
+    inkImages.set(size, { picture, colorKey: '' });
   }
   const screenImage = inkImages.get(size);
   // every pixel takes four places in the list: red, green, blue, opacity
   const pixelValues = screenImage.picture.pixels;
-  // red, green and blue only change with the Main color, so they are only
-  // written then; the opacity follows the ink every frame
-  const colorText = svgColor(uiParams.foregroundColor);
-  if (screenImage.colorText !== colorText) {
-    screenImage.colorText = colorText;
-    for (let index = 0; index < ink.length; index++) {
-      const place = index * 4;
-      pixelValues[place] = r;
-      pixelValues[place + 1] = g;
-      pixelValues[place + 2] = b;
-    }
+  // red, green and blue only change with the colors and the gradient, so
+  // they are only written then; the opacity follows the ink every frame
+  const colorKey = JSON.stringify([uiParams.foregroundColor, uiParams.foregroundEndColor, gradientGeometry()]);
+  if (screenImage.colorKey !== colorKey) {
+    screenImage.colorKey = colorKey;
+    paintInkColors(pixelValues, size);
   }
   for (let index = 0; index < ink.length; index++) {
     pixelValues[index * 4 + 3] = ink[index] * SOLID;
@@ -1470,6 +1536,28 @@ function drawInk() {
   screenImage.picture.updatePixels();
   // shown as big as the grid, whatever its number of pixels
   image(screenImage.picture, 0, 0, gridSize, gridSize);
+}
+
+// Gives every pixel of the ink's picture its color: Main everywhere, or
+// with a gradient the color of its spot between Main and Main 2. `size` is
+// how many pixels wide the picture is; each pixel is measured at its
+// middle, in the grid's pixels.
+function paintInkColors(pixelValues, size) {
+  const geometry = gradientGeometry();
+  const startColor = uiParams.foregroundColor;
+  const endColor = uiParams.foregroundEndColor;
+  const pixelSize = gridSize / size;
+  for (let pixelY = 0; pixelY < size; pixelY++) {
+    for (let pixelX = 0; pixelX < size; pixelX++) {
+      const share = geometry
+        ? gradientShare((pixelX + 0.5) * pixelSize, (pixelY + 0.5) * pixelSize, geometry)
+        : 0;
+      const place = (pixelY * size + pixelX) * 4;
+      pixelValues[place] = startColor.r + (endColor.r - startColor.r) * share;
+      pixelValues[place + 1] = startColor.g + (endColor.g - startColor.g) * share;
+      pixelValues[place + 2] = startColor.b + (endColor.b - startColor.b) * share;
+    }
+  }
 }
 
 // The cell styles: the ink is counted per grid cell, and each cell gets a
@@ -1515,10 +1603,13 @@ function inkCells() {
   return shapes;
 }
 
+// Each shape in the color of the spot it sits on (Main, unless there is a
+// gradient)
 function drawInkCells() {
   noStroke();
-  fill(uiParams.foregroundColor.r, uiParams.foregroundColor.g, uiParams.foregroundColor.b);
   for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
+    const { r, g, b } = inkColorAt(centerX, centerY);
+    fill(r, g, b);
     drawCellShape(centerX, centerY, shapeWidth, shapeHeight);
   }
 }
@@ -1561,40 +1652,152 @@ function svgColor({ r, g, b }) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// THE GRADIENTS. Where the gradient runs, in the grid's pixels, or null
+// while Gradient is Off. The screen and the SVG files both use this, so
+// they always agree.
+//   Linear  a straight line through the middle of the grid, in the
+//           direction of Angle, just long enough to reach the grid's
+//           corners: { type, x1, y1, x2, y2 }
+//   Radial  from the middle of the grid out to its corners: { type, cx, cy, r }
+function gradientGeometry() {
+  const middle = gridSize / 2;
+  if (uiParams.gradient === 'Linear') {
+    const angle = radians(uiParams.gradientAngle);
+    const directionX = Math.cos(angle);
+    const directionY = Math.sin(angle);
+    const halfLength = (Math.abs(directionX) + Math.abs(directionY)) * middle;
+    return {
+      type: 'Linear',
+      x1: middle - directionX * halfLength,
+      y1: middle - directionY * halfLength,
+      x2: middle + directionX * halfLength,
+      y2: middle + directionY * halfLength,
+    };
+  }
+  if (uiParams.gradient === 'Radial') return { type: 'Radial', cx: middle, cy: middle, r: middle * Math.SQRT2 };
+  return null;
+}
+
+// How far along the gradient the point x, y lies: 0 at its start, 1 at its
+// end, and the same past either end. This runs for every ink pixel when the
+// colors change, so it uses JavaScript's own Math functions, which are much
+// faster than p5's in such a long loop (see src/lib/trace.js).
+function gradientShare(x, y, geometry) {
+  if (geometry.type === 'Radial') {
+    const offsetX = x - geometry.cx;
+    const offsetY = y - geometry.cy;
+    return Math.min(1, Math.sqrt(offsetX * offsetX + offsetY * offsetY) / geometry.r);
+  }
+  const lengthX = geometry.x2 - geometry.x1;
+  const lengthY = geometry.y2 - geometry.y1;
+  const share = ((x - geometry.x1) * lengthX + (y - geometry.y1) * lengthY) / (lengthX * lengthX + lengthY * lengthY);
+  return Math.min(1, Math.max(0, share));
+}
+
+// The color `share` of the way from startColor to endColor
+function mixColors(startColor, endColor, share) {
+  return {
+    r: Math.round(startColor.r + (endColor.r - startColor.r) * share),
+    g: Math.round(startColor.g + (endColor.g - startColor.g) * share),
+    b: Math.round(startColor.b + (endColor.b - startColor.b) * share),
+  };
+}
+
+// The drawing's color at x, y in the grid: Main, or with a gradient the
+// color of that spot between Main and Main 2. The cell styles color each
+// shape with it.
+function inkColorAt(x, y) {
+  const geometry = gradientGeometry();
+  if (!geometry) return uiParams.foregroundColor;
+  return mixColors(uiParams.foregroundColor, uiParams.foregroundEndColor, gradientShare(x, y, geometry));
+}
+
+// The background of the canvas: Background, or with a gradient running
+// from Background to Background 2 across the grid, wherever the grid is.
+// Past the grid's corners it keeps the end colors.
+function paintBackground() {
+  const { r, g, b } = uiParams.backgroundColor;
+  background(r, g, b);
+  const geometry = gradientGeometry();
+  if (!geometry) return;
+  const left = gridLeft();
+  const top = gridTop();
+  const gradient = geometry.type === 'Radial'
+    ? drawingContext.createRadialGradient(left + geometry.cx, top + geometry.cy, 0, left + geometry.cx, top + geometry.cy, geometry.r)
+    : drawingContext.createLinearGradient(left + geometry.x1, top + geometry.y1, left + geometry.x2, top + geometry.y2);
+  gradient.addColorStop(0, svgColor(uiParams.backgroundColor));
+  gradient.addColorStop(1, svgColor(uiParams.backgroundEndColor));
+  drawingContext.save();
+  drawingContext.fillStyle = gradient;
+  drawingContext.fillRect(0, 0, width, height);
+  drawingContext.restore();
+}
+
+// A gradient for an SVG file, from startColor to endColor, named `id` so
+// shapes can be filled with it: fill="url(#id)". It is measured in the
+// same grid pixels as the shapes that use it ("userSpaceOnUse"), so it
+// leans with them on a slanted grid, like on screen.
+function svgGradient(id, startColor, endColor, geometry) {
+  const rounded = (value) => round(value, SVG_DECIMALS);
+  const stops = `<stop offset="0" stop-color="${svgColor(startColor)}"/><stop offset="1" stop-color="${svgColor(endColor)}"/>`;
+  if (geometry.type === 'Radial') {
+    return `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${rounded(geometry.cx)}" cy="${rounded(geometry.cy)}" r="${rounded(geometry.r)}">${stops}</radialGradient>`;
+  }
+  const { x1, y1, x2, y2 } = geometry;
+  return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${rounded(x1)}" y1="${rounded(y1)}" x2="${rounded(x2)}" y2="${rounded(y2)}">${stops}</linearGradient>`;
+}
+
+// An SVG file's background, from `left` across `fileWidth`: one rectangle
+// marked class="background" (the library leaves it out when exporting
+// without background). With a gradient, the gradient goes on the line
+// before it.
+function backgroundSVG(left, fileWidth) {
+  const geometry = gradientGeometry();
+  const place = `x="${left}" width="${fileWidth}" height="${gridSize}"`;
+  if (!geometry) return [`<rect class="background" ${place} fill="${svgColor(uiParams.backgroundColor)}"/>`];
+  return [
+    `<defs>${svgGradient('background-gradient', uiParams.backgroundColor, uiParams.backgroundEndColor, geometry)}</defs>`,
+    `<rect class="background" ${place} fill="url(#background-gradient)"/>`,
+  ];
+}
+
 // The SVG file's text, as a list of lines from <svg ...> down to </svg>.
 // The library keeps one with each saved variation, to export it later.
-function drawingSVG() {
-  const colorText = svgColor(uiParams.foregroundColor);
+// `withBackground: false` leaves the background out: a sheet of iterations
+// has one background behind all of them (see sheetFile()).
+function drawingSVG({ withBackground = true } = {}) {
+  const geometry = gradientGeometry();
   const shapes = [];
 
   if (!isCellStyle()) {
-    shapes.push(...inkToSVG(colorText));
+    // with a gradient, every shade of ink is filled with the same gradient
+    // from Main to Main 2, defined once at the top
+    if (geometry) shapes.push(`<defs>${svgGradient('ink-gradient', uiParams.foregroundColor, uiParams.foregroundEndColor, geometry)}</defs>`);
+    shapes.push(...inkToSVG(geometry ? 'url(#ink-gradient)' : svgColor(uiParams.foregroundColor)));
   } else {
+    // each shape in the color of the spot it sits on, like on screen
     for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
-      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, `fill="${colorText}"`));
+      const paint = `fill="${svgColor(inkColorAt(centerX, centerY))}"`;
+      shapes.push(cellShapeSVG(centerX, centerY, shapeWidth, shapeHeight, paint));
     }
   }
-  return svgFile(shapes, uiParams.backgroundColor);
+  return svgFile(shapes, { withBackground });
 }
 
 // The beginning and end of an SVG file the size of the drawing, around
 // `shapes`. The shapes are leaned like the grid on screen (skewX leans the
 // other way round than the Slant slider, like shearX). A slanted grid
 // reaches past its square on both sides, so the file is that much wider.
-// With a `backgroundColor`, the whole file is filled with it first; without
-// one, the file is see-through, like the grid and anchors files. The
-// background is marked class="background", on a line of its own, so the
-// library can leave it out when exporting without background.
-function svgFile(shapes, backgroundColor) {
+// `withBackground` fills the whole file with the background first (see
+// backgroundSVG()); without it, the file is see-through, like the grid
+// and anchors files.
+function svgFile(shapes, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
   const middle = gridSize / 2;
-  const backgroundShapes = backgroundColor
-    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
-    : [];
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
-    ...backgroundShapes,
+    ...(withBackground ? backgroundSVG(-overhang, fileWidth) : []),
     `<g transform="translate(${middle} ${middle}) skewX(${-uiParams.gridSlant}) translate(${-middle} ${-middle})">`,
     ...shapes,
     '</g>',
@@ -1691,7 +1894,8 @@ function numberOutline(number, x, y) {
 // the darkest the least. They are laid on top of each other, each a little
 // see-through, so where they overlap the ink is as dark as on screen.
 // Outlines don't show pixels, so the file stays sharp in Illustrator.
-function inkToSVG(colorText) {
+// `paint` is what they are filled with: a color, or url(#ink-gradient).
+function inkToSVG(paint) {
   // shade `level` holds everything at least that dark, rounded to the
   // nearest shade: from halfway between it and the shade below
   const levels = Array.from({ length: SVG_INK_LEVELS }, (unused, index) => index + 1);
@@ -1704,7 +1908,7 @@ function inkToSVG(colorText) {
     // the outlines are in ink pixels; the file counts in grid pixels
     const pathData = outlinesToPathData(outlines, TRACE_DECIMALS, 1 / inkScale());
     const opacity = layerOpacity(levels[index]).toFixed(4);
-    paths.push(`<path fill="${colorText}" fill-opacity="${opacity}" fill-rule="evenodd" d="${pathData}"/>`);
+    paths.push(`<path fill="${paint}" fill-opacity="${opacity}" fill-rule="evenodd" d="${pathData}"/>`);
   });
   return paths;
 }
@@ -1783,22 +1987,61 @@ function drawAnchorShape(anchor, x, y) {
 }
 
 // Where the grid starts. It sits in the middle of the space between the
-// library on the left and the control panel on the right. Hidden panels
-// (g key) are 0 wide, so the grid moves back to the middle of the window.
-// On the start screen it sits in the middle of the start screen's left
-// part, and glides over from there once a mode is picked.
+// library on the left and the control panel on the right. Folded panels
+// (the buttons in the title bar) and hidden ones (g key) leave room, so the
+// grid moves towards the middle of the window, gliding along as a panel
+// slides away. On a narrow window the panels lie over the drawing, so the
+// grid stays in the middle of the window. On the start screen it already
+// sits where it will be on the main screen (see mainGridLeft()), so it
+// stays put while the panels slide in.
 function gridLeft() {
-  const leftSide = library ? library.element.offsetWidth : 0;
-  const rightSide = panel ? panel.domElement.offsetWidth : 0;
+  const besidePanels = panelButtons && !panelButtons.isNarrow();
+  // the panels are measured on screen; the grid is placed in the sketch's
+  // pixels (see fitView())
+  const leftSide = library && besidePanels ? coveredFromLeft(library.element) / view.scale : 0;
+  const rightSide = panel && besidePanels ? coveredFromRight(panel.domElement) / view.scale : 0;
   const mainLeft = leftSide + (width - leftSide - rightSide - gridSize) / 2;
   return lerp(mainLeft, startGridLeft, startScreenAmount);
 }
 
-// The grid sits in the middle of the room below the title bar. It keeps
-// that room when the title bar is hidden (g key), so the grid doesn't jump
-// when the UI disappears.
+// Where the grid's left edge comes to rest on the main screen: in the middle
+// between the two panels once they have slid in, or without a panel that is
+// folded (or hidden with the g key). On a narrow window the panels lie over
+// the drawing, so the grid is in the middle of the window. The start screen
+// shows the grid here. offsetWidth is a panel's own width, wherever it is
+// sliding.
+function mainGridLeft() {
+  const besidePanels = !panelButtons.isNarrow();
+  const restingWidth = (element, foldedClass) => (besidePanels && !document.body.classList.contains(foldedClass)
+    ? element.offsetWidth / view.scale
+    : 0);
+  const leftSide = restingWidth(library.element, 'is-library-folded');
+  const rightSide = restingWidth(panel.domElement, 'is-controls-folded');
+  return leftSide + (width - leftSide - rightSide - gridSize) / 2;
+}
+
+// How far a panel reaches into the window from the left or right edge: all
+// of its width while it is open, less while it slides away, nothing once it
+// is folded. A hidden panel (g key) measures 0 wide, so it covers nothing.
+function coveredFromLeft(element) {
+  const box = element.getBoundingClientRect();
+  return constrain(box.right, 0, box.width);
+}
+
+// The window's width on screen (windowWidth), not the canvas's own width:
+// on a small window the canvas has more pixels than the screen (see
+// fitView()), and the panel is measured on screen.
+function coveredFromRight(element) {
+  const box = element.getBoundingClientRect();
+  return constrain(windowWidth - box.left, 0, box.width);
+}
+
+// The grid sits in the middle of the room below the title bar, or on a
+// narrow window above the dock; fitView() works it out. It keeps that room
+// when the title bar is hidden (g key), so the grid doesn't jump when the
+// UI disappears.
 function gridTop() {
-  return topBarHeight + (height - topBarHeight - gridSize) / 2;
+  return view.gridTop;
 }
 
 // How far the grid's top edge is pushed right for every pixel it sits above
@@ -1837,7 +2080,8 @@ function anchorUnderMouse() {
   if (!uiParams.showAnchors || isMultipleView()) return null;
   const [mouseGridX, mouseGridY] = gridMouse();
   let closest = null;
-  let closestDistance = GRAB_RADIUS;
+  // the same reach on screen however small the grid is shown
+  let closestDistance = GRAB_RADIUS / view.scale;
   for (const anchor of anchors) {
     const [x, y] = anchorPosition(anchor);
     const distanceToMouse = dist(x, y, mouseGridX, mouseGridY);
@@ -1886,7 +2130,7 @@ window.mouseDragged = function mouseDragged() {
   if (!dragging) return;
 
   // ignore tiny wobbles, so a click doesn't count as a drag
-  if (!dragging.moved && dist(mouseX, mouseY, dragging.startX, dragging.startY) < DRAG_THRESHOLD) return;
+  if (!dragging.moved && dist(mouseX, mouseY, dragging.startX, dragging.startY) < DRAG_THRESHOLD / view.scale) return;
   dragging.moved = true;
 
   // follow the mouse, but stay on the grid
@@ -1966,6 +2210,7 @@ window.addEventListener('keydown', (event) => {
     library.toggle();
     topBar.hidden = !topBar.hidden;
     stageFrame.element.hidden = topBar.hidden;
+    dock.element.hidden = topBar.hidden;
   }
 });
 
@@ -1982,7 +2227,7 @@ function toggleAllFolders() {
 function setPaused(paused) {
   animationPaused = paused;
   // the Play/Pause button in the panel shows what a click does next
-  if (playbackControls) playbackControls.showPaused(paused);
+  playbackControls.forEach((controls) => controls.showPaused(paused));
 }
 
 function togglePause() {
@@ -2026,6 +2271,13 @@ function showWidthSlider() {
   slantController.show(uiParams.texture === 'pen');
 }
 
+// The Colors folder only shows what the Gradient switch uses: Main 2 and
+// Background 2 while it is on, Angle only for Linear.
+function showGradientControls() {
+  gradientAngleController.show(uiParams.gradient === 'Linear');
+  gradientColorControllers.forEach((controller) => controller.show(uiParams.gradient !== 'Off'));
+}
+
 // The Grid arrows: a new number of columns and rows. The anchors are
 // rebuilt to fit: in 'Glyph' the text is laid onto the new grid, in 'Shape'
 // and 'Animation' new random cells are picked.
@@ -2061,17 +2313,19 @@ function colorDistance(firstColor, secondColor) {
   return dist(firstColor.r, firstColor.g, firstColor.b, secondColor.r, secondColor.g, secondColor.b);
 }
 
-// The Colors arrows: three new colors. Main and Background are picked again
-// until they differ enough, so the drawing stays visible.
+// The Colors arrows: new colors, the gradients' other ends (Main 2 and
+// Background 2) included. They are picked again until both ends of the
+// drawing differ enough from both ends of the background, so the drawing
+// stays visible all over. The Gradient switch stays as it is.
 function randomizeColors() {
-  let mainColor;
-  let backgroundChoice;
+  let mainColors;
+  let backgroundColors;
   do {
-    mainColor = randomColor();
-    backgroundChoice = randomColor();
-  } while (colorDistance(mainColor, backgroundChoice) < MIN_COLOR_CONTRAST);
-  uiParams.foregroundColor = mainColor;
-  uiParams.backgroundColor = backgroundChoice;
+    mainColors = [randomColor(), randomColor()];
+    backgroundColors = [randomColor(), randomColor()];
+  } while (mainColors.some((mainColor) => backgroundColors.some((backgroundChoice) => colorDistance(mainColor, backgroundChoice) < MIN_COLOR_CONTRAST)));
+  [uiParams.foregroundColor, uiParams.foregroundEndColor] = mainColors;
+  [uiParams.backgroundColor, uiParams.backgroundEndColor] = backgroundColors;
   uiParams.accentColor = randomColor();
   // also recolors the panel in the new accent
   refreshPanel();
@@ -2094,32 +2348,68 @@ function randomizeDrift() {
   refreshPanel();
 }
 
-// "Randomize All": grid, anchors, spline, colors, drift and speed at once.
-// In 'Glyph' the text is new too; in the other modes it stays. The mode
-// always stays.
+// "Randomize All": grid, anchors, spline, colors, gradient, drift and speed
+// at once. In 'Glyph' the text is new too; in the other modes it stays. The
+// mode always stays.
 function randomizeAll() {
   // before the grid, so the anchors are built once, from the new text on
   // the new grid
   if (uiParams.anchorMode === 'Glyph') randomizeText();
   randomizeGrid();
   randomizeSpline();
+  // before the colors, which refresh the panel, so it shows both
+  randomizeGradient();
   randomizeColors();
   randomizeDrift();
 }
 
+// Randomize All also picks a gradient: Off, Linear or Radial, and a new
+// Angle. The Colors arrows leave the gradient as it is and only pick new
+// colors.
+function randomizeGradient() {
+  uiParams.gradient = random(gradientOptions);
+  uiParams.gradientAngle = randomSliderValue(gradientAngleRange);
+}
+
+// The arrows on the Gradient subheading in Colors: always a gradient
+// (Linear or Radial, never Off), a new Angle, and new other ends, Main 2
+// and Background 2. Like the Colors arrows, the new ends are kept different
+// enough from the background's and the drawing's colors, so the drawing
+// stays visible all over. Main and Background themselves stay as you set
+// them, so only the pairs with a new color are compared.
+function randomizeGradientSettings() {
+  uiParams.gradient = random(gradientOptions.filter((option) => option !== 'Off'));
+  uiParams.gradientAngle = randomSliderValue(gradientAngleRange);
+  let mainEndColor;
+  let backgroundEndChoice;
+  do {
+    mainEndColor = randomColor();
+    backgroundEndChoice = randomColor();
+  } while (
+    colorDistance(mainEndColor, uiParams.backgroundColor) < MIN_COLOR_CONTRAST
+    || colorDistance(mainEndColor, backgroundEndChoice) < MIN_COLOR_CONTRAST
+    || colorDistance(uiParams.foregroundColor, backgroundEndChoice) < MIN_COLOR_CONTRAST
+  );
+  uiParams.foregroundEndColor = mainEndColor;
+  uiParams.backgroundEndColor = backgroundEndChoice;
+  refreshPanel();
+}
+
 // Puts everything back the way the sketch opens: every value in the panel,
-// the colors and the guides, with fresh anchors and a running animation.
-// Only the mode and the view (Single or Multiple) stay: in 'Glyph' the anchors come from the (reset) text, in
-// 'Shape' and 'Animation' they are new random ones.
+// the colors and the guides, the view (back to Single, and Per Row to its
+// start), with fresh anchors and a running animation. Only the mode and
+// the Invert switch stay: in 'Glyph' the anchors come from the (reset)
+// text, in 'Shape' and 'Animation' they are new random ones.
 function resetEverything() {
-  const { anchorMode: mode, viewMode, iterationsPerRow } = uiParams;
+  const { anchorMode: mode, invertColors: isInverted } = uiParams;
   for (const [settingName, value] of Object.entries(startingParams)) {
     uiParams[settingName] = structuredClone(value);
   }
   uiParams.anchorMode = mode;
-  // the view stays too: Single stays Single, Multiple keeps its size
-  uiParams.viewMode = viewMode;
-  uiParams.iterationsPerRow = iterationsPerRow;
+  // Invert stays as it is. While it is on, the starting colors are turned
+  // around too, so the drawing keeps its dark look.
+  uiParams.invertColors = isInverted;
+  if (isInverted) invertDrawingColors();
   // both remembered anchor counts start over, and Animation gets its own
   anchorCountPerMode = { Shape: startingParams.anchorCount, Animation: ANIMATION_ANCHOR_COUNT };
   lastGridMode = mode === 'Animation' ? 'Animation' : 'Shape';
@@ -2139,11 +2429,12 @@ function refreshPanel() {
   // is set again here as well
   applyAccentColor(uiParams.accentColor);
   // the switches and the Style field are this project's own, so they are told too
-  for (const control of [anchorModeController, viewModeController, paintModeController, textureController]) {
+  for (const control of [anchorModeController, viewModeController, paintModeController, textureController, gradientController]) {
     control.updateDisplay();
   }
   updateGuideControls();
   showWidthSlider();
+  showGradientControls();
   showModeControls();
   showColorTheme();
 }
@@ -2220,7 +2511,7 @@ function currentSheet() {
       inkPicture: inkToPicture(iteration.ink),
     })),
   };
-  const svg = new Blob([sheetFile(drawingSVG, uiParams.backgroundColor).join('\n')], { type: 'image/svg+xml' });
+  const svg = new Blob([sheetFile(drawingSVG, { withBackground: true }).join('\n')], { type: 'image/svg+xml' });
   const guides = {
     grid: sheetFile(gridSVG).join('\n'),
     anchors: sheetFile(anchorsSVG).join('\n'),
@@ -2235,18 +2526,17 @@ function currentSheet() {
 // in its spot, shrunk to fit: its width and height (the first line) are
 // swapped for its position and size on the sheet. The sheet is as wide as
 // the sheet's picture, slant overhang included, so the drawing and the
-// guides line up in the library's preview. With a backgroundColor, the
-// sheet gets a background behind everything, marked like svgFile()'s.
-function sheetFile(makeFile, backgroundColor) {
+// guides line up in the library's preview. `withBackground` puts one
+// background behind the whole sheet, like on screen (see backgroundSVG());
+// the iterations' own files then come without one.
+function sheetFile(makeFile, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
-  const shapes = backgroundColor
-    ? [`<rect class="background" x="${-overhang}" width="${fileWidth}" height="${gridSize}" fill="${svgColor(backgroundColor)}"/>`]
-    : [];
+  const shapes = withBackground ? backgroundSVG(-overhang, fileWidth) : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
       const { x, y, size, scaleFactor } = iterationPlace(index);
-      const file = makeFile();
+      const file = makeFile({ withBackground: false });
       // a slanted file is wider than its grid by the overhang on each side,
       // which sticks out of the iteration's spot, like on the canvas
       const left = round(x - slantOverhang() * scaleFactor, SVG_DECIMALS);
@@ -2382,7 +2672,7 @@ function saveClickedIteration() {
   const iteration = iterations[index];
   if (!iteration) return;
   withIteration(iteration, () => {
-    background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
+    paintBackground();
     push();
     translate(gridLeft(), gridTop());
     slantGrid();
@@ -2538,7 +2828,7 @@ function drawingPicture() {
 }
 
 window.windowResized = function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  fitView();
 };
 
 // This template's controls, added below the shared ones from src/lib/gui.js.
@@ -2577,6 +2867,20 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   const colors = gui.addFolder('Colors');
   addRandomizeIcon(colors, randomizeColors);
   moveColorControlsTo(colors);
+
+  // Below them, under a Gradient subheading with its own arrows, so it is
+  // easy to find: Off, Linear or Radial, and while it is on the other ends
+  // of the gradients; Angle only for Linear (see showGradientControls())
+  addSubheading(colors, 'Gradient', { randomize: randomizeGradientSettings });
+  gradientController = addSwitch(colors, uiParams, 'gradient', gradientOptions, showGradientControls, { secondary: true });
+  gradientAngleController = colors
+    .add(uiParams, 'gradientAngle', gradientAngleRange.min, gradientAngleRange.max, gradientAngleRange.step)
+    .name('Angle');
+  gradientColorControllers = [
+    colors.addColor(uiParams, 'foregroundEndColor', MAX_CHANNEL).name('Main 2'),
+    colors.addColor(uiParams, 'backgroundEndColor', MAX_CHANNEL).name('Background 2'),
+  ];
+  showGradientControls();
 
   const grid = gui.addFolder('Grid');
   // the eye and the Randomize arrows sit on the right of the folder's title
@@ -2630,7 +2934,7 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
 
 
   // the Playback headline at the end, with Restart and Play/Pause on it
-  playbackControls = addPlaybackSection(gui);
+  addPlaybackSection(gui);
 
   // A closed folder lights up as a whole when the mouse is over it (see
   // index.html), so a click anywhere in it opens it, not only on its title.
@@ -2702,7 +3006,7 @@ function addControlsSection(gui) {
   actions.className = 'panel-section-actions';
   actions.append(
     makeButton('Randomize All', randomizeAll, RANDOMIZE_ICON),
-    makeButton('Reset All', resetEverything, RESTART_ICON),
+    makeButton('Reset All', resetEverything, RESET_ICON),
   );
   gui.$children.append(heading, actions);
 }
@@ -2716,13 +3020,24 @@ function makeSectionTitle(text) {
 }
 
 // The Playback section at the end of the panel: its headline, then Restart,
-// Play/Pause and Stop as square buttons, and a bar that shows how far the
-// Animation loop has come. Clicking or dragging along the bar jumps there
-// (see seekLoop()). It gives back showPaused(paused), which swaps the
-// Play/Pause icon (setPaused() calls it), and showProgress(), see below.
+// Play/Pause and Stop as square buttons, and the loop bar.
 function addPlaybackSection(gui) {
   const heading = makeSectionTitle('Playback');
+  const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
+  const row = document.createElement('div');
+  row.className = 'panel-playback';
+  row.append(restartButton, pauseButton, stopButton, progress);
+  gui.$children.append(heading, row);
+}
 
+// Restart, Play/Pause and Stop as square buttons, and a bar that shows how
+// far the Animation loop has come. Clicking or dragging along the bar jumps
+// there (see seekLoop()). The control panel and the dock each get a set;
+// each set is added to playbackControls, so setPaused() and
+// updatePlaybackProgress() keep them all the same. It gives back the
+// buttons and the bar to place, and showPaused(paused), which swaps the
+// Play/Pause icon, and showProgress(), see below.
+function createPlaybackControls() {
   const restartButton = makeIconButton(RESTART_ICON, 'Restart', restartDrawing);
   const pauseButton = makeIconButton(PAUSE_ICON, 'Pause', togglePause);
   const stopButton = makeIconButton(STOP_ICON, 'Stop', stopDrawing);
@@ -2750,11 +3065,6 @@ function addPlaybackSection(gui) {
     if (progress.hasPointerCapture(event.pointerId)) seekToMouse(event);
   });
 
-  const row = document.createElement('div');
-  row.className = 'panel-playback';
-  row.append(restartButton, pauseButton, stopButton, progress);
-  gui.$children.append(heading, row);
-
   // while the drawing runs, the button offers to pause it; while it is
   // paused, to play it again
   const showPaused = (paused) => {
@@ -2772,16 +3082,116 @@ function addPlaybackSection(gui) {
     progress.classList.toggle('is-idle', !isLooping);
   };
 
-  return { showPaused, showProgress };
+  const controls = { restartButton, pauseButton, stopButton, progress, showPaused, showProgress };
+  playbackControls.push(controls);
+  return controls;
 }
 
-// The Playback bar follows the Animation loop. In Multiple view every
-// iteration runs its own loop at its own speed; the bar follows the first.
+// The Playback bars follow the Animation loop. In Multiple view every
+// iteration runs its own loop at its own speed; the bars follow the first.
 function updatePlaybackProgress() {
-  if (!playbackControls) return;
   const isLooping = uiParams.anchorMode === 'Animation';
   const step = isMultipleView() ? (iterations[0]?.loopStep ?? 0) : loopStep;
-  playbackControls.showProgress(isLooping ? step / uiParams.loopLength : 0, isLooping);
+  const share = isLooping ? step / uiParams.loopLength : 0;
+  playbackControls.forEach((controls) => controls.showProgress(share, isLooping));
+}
+
+// THE DOCK, below the grid on a narrow window (a phone, or a tablet held
+// upright), where the panels are folded away: the loop bar, centred under
+// the grid, and below it six buttons in two rows. Restart, Play/Pause and
+// Stop on top, Randomize All, Save Iteration and Reset All below. They do
+// the same as the buttons in the panels. fitView() places it; its look is
+// in index.html, under "the dock".
+function createDock() {
+  const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
+  const buttons = document.createElement('div');
+  buttons.className = 'dock-buttons';
+  buttons.append(
+    restartButton,
+    pauseButton,
+    stopButton,
+    makeButton('Randomize', randomizeAll, RANDOMIZE_ICON),
+    makeButton('Save', () => library.save(), SAVE_ICON),
+    makeButton('Reset', resetEverything, RESET_ICON),
+  );
+
+  const element = document.createElement('div');
+  element.className = 'dock';
+  element.append(progress, buttons);
+  document.body.appendChild(element);
+  return { element };
+}
+
+// THE VIEW. The grid is shown at its real size, gridSize pixels, when the
+// window has room for it, and shrinks to fit when it hasn't:
+//   on a wide window, between the two panels and below the title bar, in
+//     the middle of the room that is left
+//   on a narrow window (a phone, a tablet held upright), across the width,
+//     with the dock below it. The grid, its labels and the dock sit
+//     together in the middle of the room below the title bar.
+//
+// The sketch works in its own pixels all the same: the canvas is made
+// larger by 1 / view.scale, and the browser shows it smaller, as big as
+// the window. So drawing, dragging and the exports work exactly as at the
+// real size, and p5 turns the mouse position back into the canvas's
+// pixels by itself. Runs at the start and whenever the window changes size.
+function fitView() {
+  let roomAcross;
+  let roomDown;
+  let dockHeight = 0;
+  if (panelButtons.isNarrow()) {
+    // the panels lie over the drawing here; their padding stays free on
+    // both sides
+    const sideRoom = cssPixels('--panel-padding');
+    dockHeight = dock.element.offsetHeight;
+    roomAcross = windowWidth - sideRoom * 2;
+    roomDown = windowHeight - topBarHeight - STAGE_LABEL_ROOM * 2 - DOCK_GAP - dockHeight - sideRoom;
+  } else {
+    // A panel hidden with the g key measures 0 wide. It still counts with
+    // the width it had, so the grid keeps its size when the UI is hidden.
+    // Folded panels count too: the grid only moves to the middle then.
+    view.libraryWidth = library.element.offsetWidth || view.libraryWidth;
+    view.controlsWidth = panel.domElement.offsetWidth || view.controlsWidth;
+    roomAcross = windowWidth - view.libraryWidth - view.controlsWidth - cssPixels('--panel-gap') * 2;
+    roomDown = windowHeight - topBarHeight - STAGE_LABEL_ROOM * 2;
+  }
+  view.scale = Math.min(1, roomAcross / gridSize, roomDown / gridSize);
+
+  // the grid (and the dock below it, if there is one) in the middle of the
+  // room below the title bar
+  const shownGridSize = gridSize * view.scale;
+  const dockRoom = dockHeight > 0 ? DOCK_GAP + dockHeight : 0;
+  const blockHeight = STAGE_LABEL_ROOM * 2 + shownGridSize + dockRoom;
+  const blockTop = topBarHeight + Math.max(0, (windowHeight - topBarHeight - blockHeight) / 2);
+  const gridScreenTop = blockTop + STAGE_LABEL_ROOM;
+  view.gridTop = gridScreenTop / view.scale;
+  const dockTop = gridScreenTop + shownGridSize + STAGE_LABEL_ROOM + DOCK_GAP;
+  dock.element.style.top = `${dockTop}px`;
+  // the start screen puts its panel of modes in the dock's place on a
+  // narrow window (see index.html), so it is told where that is
+  document.documentElement.style.setProperty('--dock-top', `${dockTop}px`);
+
+  const canvasWidth = windowWidth / view.scale;
+  const canvasHeight = windowHeight / view.scale;
+  resizeCanvas(canvasWidth, canvasHeight);
+  // At least as many canvas pixels as ink pixels, also on screens that
+  // aren't Retina, so the saved picture keeps the ink's full detail. Only
+  // on a phone or tablet (a touch screen) a very large canvas gets fewer,
+  // to stay below MAX_TOUCH_CANVAS_PIXELS.
+  const fullDensity = Math.max(displayDensity(), INK_SCALE);
+  const isTouchScreen = navigator.maxTouchPoints > 0;
+  const largestDensity = isTouchScreen ? Math.sqrt(MAX_TOUCH_CANVAS_PIXELS / (canvasWidth * canvasHeight)) : fullDensity;
+  pixelDensity(Math.min(fullDensity, largestDensity));
+  // shown as big as the window, whatever its own size
+  drawingContext.canvas.style.width = `${windowWidth}px`;
+  drawingContext.canvas.style.height = `${windowHeight}px`;
+  // the labels around the grid and the dock take the grid's size on screen
+  document.documentElement.style.setProperty('--shown-grid-size', `${shownGridSize}px`);
+}
+
+// A size set in index.html, like --panel-padding, in pixels
+function cssPixels(name) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
 }
 
 // The Invert switch, as the panel and the start screen both have it.
@@ -2789,8 +3199,21 @@ const invertSwitchSettings = {
   label: 'Invert',
   title: 'Invert all colors',
   isOn: () => uiParams.invertColors,
-  onClick: () => invertColors(),
+  onClick: () => invertColorsSmoothly(),
 };
+
+// Inverts the colors with a fade: the browser keeps a picture of the page
+// as it is, inverts the colors, and fades the picture out over the page in
+// its new colors, the drawing included (a "view transition"). How long it
+// takes is --theme-fade-duration in index.html. Browsers that can't do
+// this (older Firefox) invert the colors at once.
+function invertColorsSmoothly() {
+  if (!document.startViewTransition) {
+    invertColors();
+    return;
+  }
+  document.startViewTransition(() => invertColors());
+}
 
 // The start screen's Anchors switch: shows or hides the anchors there, see
 // startGuides.
@@ -2810,9 +3233,16 @@ const startAnchorsSwitchSettings = {
 // accent keeps its color, so the guides stay recognisable.
 function invertColors() {
   uiParams.invertColors = !uiParams.invertColors;
-  uiParams.foregroundColor = invertedColor(uiParams.foregroundColor);
-  uiParams.backgroundColor = invertedColor(uiParams.backgroundColor);
+  invertDrawingColors();
   refreshPanel();
+}
+
+// Main and Background turned around, and the other ends of their
+// gradients, Main 2 and Background 2
+function invertDrawingColors() {
+  for (const colorName of ['foregroundColor', 'backgroundColor', 'foregroundEndColor', 'backgroundEndColor']) {
+    uiParams[colorName] = invertedColor(uiParams[colorName]);
+  }
 }
 
 function invertedColor({ r, g, b }) {
@@ -2827,10 +3257,12 @@ function showColorTheme() {
   if (startScreen) startScreen.updateSwitches();
 }
 
-// The title bar across the top of the window: the project's mark and name
-// on the left (a click on them goes back to the start screen), the title
-// of the middle section in the middle, and the subtitle on the right. The texts are projectTitle and projectSubtitle in
-// src/config.js; the look is in index.html, under "the title bar".
+// The title bar across the top of the window: the project's name on the
+// left (a click on it goes back to the start screen), the title
+// of the middle section in the middle, and the subtitle on the right. At
+// each end sits the button that folds the panel below it away. The texts
+// are projectTitle and projectSubtitle in src/config.js; the look is in
+// index.html, under "the title bar".
 function createTopBar() {
   const bar = document.createElement('header');
   bar.className = 'top-bar';
@@ -2839,8 +3271,7 @@ function createTopBar() {
   const brand = document.createElement('button');
   brand.className = 'top-bar-brand';
   brand.title = 'Back to the start';
-  brand.innerHTML = dotGridIcon();
-  brand.append(projectTitle);
+  brand.textContent = projectTitle;
   brand.addEventListener('click', returnHome);
 
   const title = document.createElement('div');
@@ -2851,7 +3282,18 @@ function createTopBar() {
   subtitle.className = 'top-bar-subtitle';
   subtitle.textContent = projectSubtitle;
 
-  bar.append(brand, title, subtitle);
+  // the two ends of the bar: the library's button and the name on the left,
+  // the subtitle and the control panel's button on the right. On the start
+  // screen the buttons are hidden and the name and the subtitle move out
+  // to the edges (see index.html).
+  const start = document.createElement('div');
+  start.className = 'top-bar-start';
+  start.append(panelButtons.library, brand);
+  const end = document.createElement('div');
+  end.className = 'top-bar-end';
+  end.append(subtitle, panelButtons.controls);
+
+  bar.append(start, title, end);
   document.body.appendChild(bar);
   return bar;
 }
@@ -2886,7 +3328,8 @@ function updateStageFrame() {
   const { element, labels } = stageFrame;
   if (element.hidden) return;
 
-  const place = `translate(${gridLeft()}px, ${gridTop()}px)`;
+  // the grid's place in the sketch's pixels, turned into pixels on screen
+  const place = `translate(${gridLeft() * view.scale}px, ${gridTop() * view.scale}px)`;
   if (element.style.transform !== place) element.style.transform = place;
 
   const perRow = uiParams.iterationsPerRow;
@@ -2924,9 +3367,11 @@ document.documentElement.style.setProperty(
 // Builds the control panel and the library, then starts p5. p5 looks for
 // the setup() and draw() you defined above and runs them.
 library = createLibrary({ capture: captureVariation, apply: applyVariation });
+panelButtons = createPanelButtons();
 topBar = createTopBar();
 topBarHeight = topBar.offsetHeight;
 stageFrame = createStageFrame();
+dock = createDock();
 panel = createGUI({
   params: uiParams,
   // lil-gui's own title. It is hidden (see index.html): a click on it would

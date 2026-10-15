@@ -28,7 +28,7 @@ import GUI from 'lil-gui';
 import { fontOptions } from './font/fonts.js';
 import { savePNG } from './export.js';
 import { Easings } from './easings.js';
-import { EYE_OPEN_ICON, EYE_CLOSED_ICON, RANDOMIZE_ICON } from './icons.js';
+import { EYE_OPEN_ICON, EYE_CLOSED_ICON, RANDOMIZE_ICON, dotGridIcon } from './icons.js';
 import { projectTitle, projectSubtitle } from '../config.js';
 
 // How long a slider takes to glide back to its starting value after a
@@ -38,6 +38,10 @@ const RESET_DURATION = 400;
 // the handle, in pixels on either side. The handle itself is only 2 pixels
 // wide, too thin to hit exactly.
 const HANDLE_REACH = 6;
+// How many dots across and down the project's mark next to its name has,
+// and how wide it is in pixels (see createProjectFooter()).
+const FOOTER_MARK_DOTS = 3;
+const FOOTER_MARK_SIZE = 40;
 // The range of the Size slider for the text, in pixels. Below 150 a letter
 // shrinks into a few grid cells and stops reading as a letter; at 900 a
 // single letter fills the grid (longer words fill it much earlier).
@@ -63,7 +67,11 @@ export function createGUI({
   // text, font and size, added to `container`: the panel itself or a folder
   const addTextControls = (container) => {
     const controllers = [];
-    if ('text' in params) controllers.push(container.add(params, 'text').name('Type here').onChange(onTextChange));
+    if ('text' in params) {
+      const textController = container.add(params, 'text').name('Type here').onChange(onTextChange);
+      selectAllOnFocus(textController.$input);
+      controllers.push(textController);
+    }
     if ('font' in params) controllers.push(container.add(params, 'font', fontOptions).onChange(onFontChange));
     if ('textSize' in params) controllers.push(container.add(params, 'textSize', TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max, TEXT_SIZE_RANGE.step).name('Size').onChange(onTextSizeChange));
     return controllers;
@@ -176,6 +184,23 @@ export function createGUI({
   });
 
   return gui;
+}
+
+// Clicking into the field marks all of its text, so typing replaces it and
+// you don't have to delete the old word first. The text stays until you type.
+function selectAllOnFocus(input) {
+  // Safari and Chrome place the cursor when the mouse button comes up, which
+  // would undo the selection, so the first mouseup after focusing is skipped.
+  // Later clicks place the cursor as usual, to fix a single letter.
+  let justFocused = false;
+  input.addEventListener('focus', () => {
+    input.select();
+    justFocused = true;
+  });
+  input.addEventListener('mouseup', (event) => {
+    if (justFocused) event.preventDefault();
+    justFocused = false;
+  });
 }
 
 // Moves a slider back to its starting value over RESET_DURATION, a little
@@ -357,18 +382,24 @@ export function setButtonIcon(button, icon, label) {
   button.setAttribute('aria-label', label);
 }
 
-// The project's name with its subtitle below it, from src/config.js, as at
-// the bottom of the library and of the start screen. `className` places it.
-export function createProjectName(className) {
-  const block = document.createElement('div');
-  block.className = className;
+// The project's mark, and next to it its name with the subtitle below, from
+// src/config.js: at the bottom of the library and of the start screen, the
+// same in both. `className` places it; the look is in index.html, under
+// "the project's mark and name".
+export function createProjectFooter(className) {
+  const footer = document.createElement('div');
+  footer.className = `project-footer ${className}`;
+  footer.innerHTML = dotGridIcon(FOOTER_MARK_DOTS, FOOTER_MARK_SIZE);
+  const text = document.createElement('div');
+  text.className = 'project-footer-text';
   const name = document.createElement('div');
   name.textContent = projectTitle;
   const subtitle = document.createElement('div');
   subtitle.className = 'project-subtitle';
   subtitle.textContent = projectSubtitle;
-  block.append(name, subtitle);
-  return block;
+  text.append(name, subtitle);
+  footer.appendChild(text);
+  return footer;
 }
 
 // A name with a small on/off switch next to it, like Invert:
@@ -449,6 +480,31 @@ export function addEyeToggle(folder, params, property, onChange = () => {}) {
 
   updateDisplay();
   return { updateDisplay };
+}
+
+// A small headline inside a folder, with some room above it, to start a
+// group of controls of its own, like Gradient in the Colors folder:
+//
+//   addSubheading(colors, 'Gradient', { randomize: randomizeGradient });
+//
+// The controls added to the folder after it sit below it. With `randomize`,
+// crossing arrows on its right run it, like the arrows on a folder's title.
+// Its look is in index.html, under "the subheadings".
+export function addSubheading(folder, text, { randomize } = {}) {
+  const heading = document.createElement('div');
+  heading.className = 'lil-subheading';
+  heading.append(text);
+  if (randomize) {
+    const icon = document.createElement('span');
+    icon.className = 'lil-title-icon';
+    icon.setAttribute('role', 'button');
+    icon.innerHTML = RANDOMIZE_ICON;
+    icon.title = `Randomize ${text}`;
+    icon.addEventListener('click', randomize);
+    heading.appendChild(icon);
+  }
+  folder.$children.appendChild(heading);
+  return heading;
 }
 
 // Crossing arrows that run `randomize` when clicked, instead of a Randomize button

@@ -229,20 +229,36 @@
          the library and in the large preview */
       .top-bar-brand,
       .top-bar-subtitle,
-      .start-project-name,
       .start-mode-label,
       .stage-label,
-      .library-footer,
+      .project-footer,
       .library-preview-labels {
         font-family: var(--label-font);
         font-size: var(--label-size);
         letter-spacing: calc(var(--label-tracking) + var(--text-tracking));
         text-transform: uppercase;
       }
-      /* the project's name with its subtitle below it, made by
-         createProjectName() in src/lib/gui.js */
-      .start-project-name,
-      .library-project-name {
+      /* THE PROJECT'S MARK AND NAME at the bottom left, the same on the
+         start screen and at the bottom of the library: the dots, and next
+         to them the name with the subtitle below it. Made by
+         createProjectFooter() in src/lib/gui.js. Both sit
+         --footer-bottom-gap above the window's bottom edge. The library's
+         is the panel's padding in from the left edge, the start screen's
+         is --start-margin in, in line with the headline. */
+      :root {
+        --footer-bottom-gap: 24px;
+      }
+      .project-footer {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        color: var(--ink-color);
+      }
+      .project-footer svg {
+        flex-shrink: 0;
+        color: var(--label-color);
+      }
+      .project-footer-text {
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -251,9 +267,10 @@
         color: var(--muted-color);
       }
 
-      /* THE TITLE BAR across the top: the project's mark and name on the
-         left, the title of the middle in the middle, the subtitle on the
-         right. Its texts are in src/config.js. */
+      /* THE TITLE BAR across the top: the project's name on the left, the
+         title of the middle in the middle, the subtitle on the
+         right, and at each end the button that folds the panel below it
+         away. Its texts are in src/config.js. */
       .top-bar {
         position: fixed;
         top: 0;
@@ -270,12 +287,80 @@
         border-bottom: 1px solid var(--line-color);
         color: var(--ink-color);
       }
-      /* the mark and the name: a button back to the start screen */
-      .top-bar-brand {
-        justify-self: start;
+      /* the two ends: each keeps its own column, also when the title in
+         the middle is left out on a phone */
+      .top-bar-start,
+      .top-bar-end {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: var(--panel-button-gap);
+      }
+      .top-bar-start {
+        grid-column: 1;
+        justify-self: start;
+      }
+      .top-bar-end {
+        grid-column: 3;
+        justify-self: end;
+      }
+      /* the buttons that fold the library and the control panel away: only
+         an icon, grey until the mouse is over it. They stick out by
+         --panel-button-inset on the outside, so the icon itself lines up
+         with the text in the panel below. --panel-button-gap is the room
+         between a button and the name or the subtitle next to it. */
+      .top-bar {
+        --panel-button-size: 32px;
+        --panel-button-inset: 8px;
+        --panel-button-gap: 14px;
+      }
+      .ui-button.top-bar-panel-button {
+        width: var(--panel-button-size);
+        height: var(--panel-button-size);
+        padding: 0;
+        background: none;
+        color: var(--label-color);
+      }
+      .top-bar-start .top-bar-panel-button {
+        margin-left: calc(-1 * var(--panel-button-inset));
+      }
+      .top-bar-end .top-bar-panel-button {
+        margin-right: calc(-1 * var(--panel-button-inset));
+      }
+      /* On the start screen the buttons are hidden, and the name and the
+         subtitle sit --start-margin in from the window's edges, in line
+         with the headline. Once a mode is picked they move in to make room
+         while the start screen fades out, and the buttons fade in after,
+         into the room that is free. On the way back the buttons fade out
+         first, then the name and the subtitle move out. They move with the
+         start screen, so they take its delay.
+         --start-shift is how far they move: from where they are with the
+         buttons (the padding plus the button's room) to the start margin. */
+      .top-bar-start .top-bar-brand,
+      .top-bar-end .top-bar-subtitle {
+        --panel-button-room: calc(var(--panel-button-size) - var(--panel-button-inset) + var(--panel-button-gap));
+        --start-shift: calc(var(--panel-padding) + var(--panel-button-room) - var(--start-margin));
+        transition: transform var(--fade-duration) ease-in-out var(--start-screen-delay);
+      }
+      body.is-starting .top-bar-start .top-bar-brand {
+        transform: translateX(calc(-1 * var(--start-shift)));
+      }
+      body.is-starting .top-bar-end .top-bar-subtitle {
+        transform: translateX(var(--start-shift));
+      }
+      /* while its panel is open, the button sits on light grey, like a
+         switched-on button */
+      .ui-button.top-bar-panel-button[aria-expanded='true'] {
+        background: var(--button-color);
+        color: var(--ink-color);
+      }
+      .ui-button.top-bar-panel-button:hover {
+        background: var(--button-hover-color);
+        color: var(--ink-color);
+      }
+      /* the name: a button back to the start screen */
+      .top-bar-brand {
+        display: flex;
+        align-items: center;
         padding: 6px 0;
         border: none;
         background: none;
@@ -290,18 +375,15 @@
         outline-offset: 4px;
         border-radius: var(--radius);
       }
-      .top-bar-brand svg {
-        color: var(--label-color);
-      }
       /* the same size as the Library and Modes headlines */
       .top-bar-title {
+        grid-column: 2;
         font-family: var(--title-font);
         font-size: var(--headline-size);
         font-weight: 500;
         letter-spacing: calc(var(--headline-tracking) + var(--text-tracking));
       }
       .top-bar-subtitle {
-        justify-self: end;
         color: var(--muted-color);
       }
 
@@ -330,20 +412,44 @@
       .library,
       .lil-gui.lil-root,
       .stage-frame,
-      .top-bar-title {
+      .top-bar-title,
+      .top-bar-panel-button,
+      .dock {
         transition: opacity var(--fade-duration) ease var(--main-screen-delay);
       }
       body.is-starting .library,
       body.is-starting .lil-gui.lil-root,
       body.is-starting .stage-frame,
-      body.is-starting .top-bar-title {
+      body.is-starting .top-bar-title,
+      body.is-starting .top-bar-panel-button,
+      body.is-starting .dock {
         opacity: 0;
         pointer-events: none;
       }
+      /* The two panels also slide in from the window's edges while they
+         fade in, and back out while they fade out: the library from the
+         left, the control panel from the right. This uses `translate`, not
+         `transform`, since the panels' transform already folds them away;
+         the two add up. How fast and smooth the slide is, is set with the
+         panels' other transitions, under "folded panels". */
+      body.is-starting .library {
+        translate: -100% 0;
+      }
+      body.is-starting .lil-gui.lil-root {
+        translate: 100% 0;
+      }
       .start-screen {
-        /* how wide the column of cards is: a third of the window, so the
-           cards grow and shrink with it, but never narrower than this */
-        --start-modes-width: max(320px, 34vw);
+        /* how wide the column of cards is: as wide as the control panel,
+           so it sits exactly where the panel slides in once a mode is
+           picked */
+        --start-modes-width: var(--panel-width);
+        /* how far below the title bar the tops of the switches on the
+           right start (where the control panel's Invert switch is), and
+           the tops of the headline's capitals on the left */
+        --start-switch-top: 24px;
+        --start-headline-top: 40px;
+        /* the room above the switches inside the card column */
+        --start-modes-padding-top: 16px;
         position: fixed;
         top: var(--top-bar-height);
         left: 0;
@@ -365,10 +471,24 @@
         flex: 1;
         pointer-events: none;
       }
+      /* how far the headline, the name and subtitle in the title bar, the
+         project's mark at the bottom and the mode cards sit in from the
+         window's edges on the start screen: the same as the panels'
+         padding, so the start screen and the main screen line up */
+      :root {
+        --start-margin: var(--panel-padding);
+      }
+      /* The tops of the headline's capitals start --start-headline-top
+         below the title bar. A line of text has empty room above its
+         capitals, more the larger the text; text-box cuts it away, so the
+         headline starts exactly at their top, whatever its size. (Browsers
+         without text-box, like older Firefox, keep the room, and the
+         headline sits a little lower.) */
       .start-headline {
         position: absolute;
-        top: 40px;
-        left: 40px;
+        top: var(--start-headline-top);
+        left: var(--start-margin);
+        text-box: trim-both cap alphabetic;
         font-family: var(--heading-font);
         font-size: clamp(44px, 5vw, 84px);
         font-weight: 700;
@@ -377,11 +497,10 @@
         /* the \n in the text starts a new line */
         white-space: pre-line;
       }
-      .start-project-name {
+      .start-footer {
         position: absolute;
-        left: 40px;
-        bottom: 36px;
-        color: var(--muted-color);
+        left: var(--start-margin);
+        bottom: var(--footer-bottom-gap);
       }
       /* the right part: the cards at the bottom, below each other */
       .start-modes {
@@ -390,34 +509,49 @@
         flex-direction: column;
         justify-content: flex-end;
         gap: 14px;
-        padding: 16px 16px 56px;
+        padding: var(--start-modes-padding-top) var(--start-margin) 56px;
         background: var(--page-color);
         border-left: 1px solid var(--line-color);
-        transition: transform var(--fade-duration) ease var(--start-screen-delay);
+        /* the slide out and back in: the same as the control panel's (see
+           "folded panels"), at the start screen's moment */
+        transition: translate var(--panel-slide-duration) var(--fold-easing) var(--start-screen-delay);
       }
       /* Invert and Anchors at the top of the card column, on the right,
-         below each other, with their switches lined up on the right.
-         Invert sits at the height of the panel's Invert switch. The cards
-         sit at the bottom. */
+         below each other, with their switches lined up on the right. The
+         panel keeps room for its scrollbar on the right
+         (--switch-scrollbar-room, as wide as lil-gui's --scrollbar-width),
+         so these keep the same room. The cards sit at the bottom.
+         --switch-padding is the room a switch keeps above its track (see
+         "the switches"); the margin brings the track's top to
+         --start-switch-top. */
       .start-switches {
+        --switch-scrollbar-room: 6px;
+        --switch-padding: 4px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
         gap: 6px;
-        margin: 4px 18px auto;
+        margin: calc(var(--start-switch-top) - var(--start-modes-padding-top) - var(--switch-padding)) var(--switch-scrollbar-room) auto;
       }
-      /* the cards slide a little to the right as they fade out, and back
-         as they come in again */
+      /* Picking a mode slides the cards out to the right, the whole column's
+         width, while the control panel slides in to the same place, the
+         same way. Going back to the start screen slides them in again. */
       body:not(.is-starting) .start-modes {
-        transform: translateX(32px);
+        translate: 100% 0;
       }
       .start-mode {
+        /* the arrow's size, and the room kept between it and the name */
+        --mode-arrow-size: 28px;
+        --mode-name-gap: 12px;
         position: relative;
         display: grid;
         grid-template-columns: 1fr auto;
         align-items: center;
         row-gap: 10px;
-        padding: 30px 36px 28px;
+        column-gap: var(--mode-name-gap);
+        padding: 30px 24px 28px;
+        /* lets the name measure the card's width (cqi, see .start-mode-name) */
+        container-type: inline-size;
         border: 1px solid var(--line-color);
         border-radius: var(--card-radius);
         background: var(--page-color);
@@ -440,10 +574,18 @@
         grid-column: 1 / -1;
         color: var(--muted-color);
       }
+      /* The mode's name: it grows with the window, but never past the room
+         the card has for it, next to the arrow. 100cqi is the card's width
+         inside its padding; "Animation", the longest name, is about
+         --longest-name-width times as wide as its font size. */
       .start-mode-name {
+        --longest-name-width: 5;
         color: var(--foreground-color);
         font-family: var(--title-font);
-        font-size: clamp(32px, 3vw, 48px);
+        font-size: min(
+          clamp(28px, 2.6vw, 40px),
+          calc((100cqi - var(--mode-arrow-size) - var(--mode-name-gap)) / var(--longest-name-width))
+        );
         font-weight: 500;
         letter-spacing: calc(-0.01em + var(--text-tracking));
       }
@@ -452,8 +594,8 @@
         transition: transform 200ms;
       }
       .start-mode-arrow svg {
-        width: 28px;
-        height: 28px;
+        width: var(--mode-arrow-size);
+        height: var(--mode-arrow-size);
       }
       .start-mode:hover .start-mode-arrow,
       .start-mode.is-active .start-mode-arrow {
@@ -463,13 +605,15 @@
       /* THE LABELS AROUND THE GRID: small capitals above and below its
          corners, and a + beyond each corner, like on a drawing board.
          src/sketch.js moves them to where the grid is. */
-      /* exactly as big as the grid; src/sketch.js sets --grid-size */
+      /* exactly as big as the grid on screen; src/sketch.js sets
+         --shown-grid-size (smaller than --grid-size when the window is too
+         small for the grid) */
       .stage-frame {
         position: fixed;
         top: 0;
         left: 0;
-        width: var(--grid-size);
-        height: var(--grid-size);
+        width: var(--shown-grid-size, var(--grid-size));
+        height: var(--shown-grid-size, var(--grid-size));
         /* above the drawing, below the save flash and the panels */
         z-index: 999;
         /* clicks go through to the canvas below */
@@ -746,8 +890,13 @@
         opacity: 1;
       }
       /* room below the last control of an open folder. A margin, not a
-         padding, so it folds away smoothly with the folder. */
-      .lil-gui.lil-root > .lil-children > .lil-gui:not(.lil-always-open) > .lil-children > :last-child {
+         padding, so it folds away smoothly with the folder. It goes to the
+         last control that shows: a hidden control (lil-gui hides it with
+         style="display: none", like Main 2 while Gradient is Off) can't
+         hold it, so the one above it gets it. Read: a control that isn't
+         hidden, with no control after it that isn't hidden. */
+      .lil-gui.lil-root > .lil-children > .lil-gui:not(.lil-always-open) > .lil-children
+        > :not([style*='display: none']):not(:has(~ :not([style*='display: none']))) {
         margin-bottom: 16px;
       }
 
@@ -767,6 +916,28 @@
         cursor: pointer;
       }
       .lil-title-icon:hover {
+        color: var(--ink-color);
+      }
+
+      /* THE SUBHEADINGS inside a folder, like Gradient in Colors (made by
+         addSubheading() in src/lib/gui.js): some room above, then the
+         name, as large as a folder title, with its arrows on the right. It
+         lines up with the rows below it. */
+      .lil-gui .lil-subheading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 10px var(--panel-padding) 4px calc(var(--panel-padding) + var(--arrow-width));
+        padding-top: 14px;
+        color: var(--ink-color);
+        font-family: var(--title-font);
+        font-size: 16px;
+        font-weight: 500;
+      }
+      .lil-subheading .lil-title-icon {
+        color: var(--label-color);
+      }
+      .lil-subheading .lil-title-icon:hover {
         color: var(--ink-color);
       }
 
@@ -1109,17 +1280,182 @@
         background: var(--card-color);
       }
 
-      /* the project's mark, name and subtitle at the bottom of the library */
+      /* the project's mark, name and subtitle at the bottom of the library
+         (see "the project's mark and name") */
       .library-footer {
         margin-top: auto;
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding: 20px var(--panel-padding) 24px;
+        padding: 20px var(--panel-padding) var(--footer-bottom-gap);
       }
-      .library-footer svg {
-        flex-shrink: 0;
-        color: var(--label-color);
+
+      /* FOLDED PANELS: the buttons at the ends of the title bar slide the
+         library out to the left and the control panel out to the right
+         (see src/lib/panels.js), and back in. The grid glides along into
+         the middle of the room that is left. Once a panel is out of sight
+         it also turns invisible, so the Tab key skips what is in it; when
+         it comes back it is visible straight away, before it slides in. */
+      :root {
+        /* fast at first, then slowing down gently, like the library's cards */
+        --fold-easing: cubic-bezier(0.22, 1, 0.36, 1);
+        /* how long the panels take to slide in or out: when a mode is
+           picked or the start screen comes back, and when the buttons fold
+           them away or bring them back. The same slide everywhere. */
+        --panel-slide-duration: 800ms;
+      }
+      /* Every transition of the two panels, in one list: a rule that sets
+         `transition` replaces the whole list, so they can't be split up.
+         The fade and the slide in from the edges (translate) follow the
+         start screen; the fold (transform) follows the buttons. */
+      .library,
+      .lil-gui.lil-root {
+        transition:
+          opacity var(--fade-duration) ease var(--main-screen-delay),
+          translate var(--panel-slide-duration) var(--fold-easing) var(--main-screen-delay),
+          transform var(--panel-slide-duration) var(--fold-easing),
+          visibility 0s;
+      }
+      body.is-library-folded .library {
+        transform: translateX(-100%);
+      }
+      body.is-controls-folded .lil-gui.lil-root {
+        transform: translateX(100%);
+      }
+      body.is-library-folded .library,
+      body.is-controls-folded .lil-gui.lil-root {
+        visibility: hidden;
+        transition:
+          opacity var(--fade-duration) ease var(--main-screen-delay),
+          translate var(--panel-slide-duration) var(--fold-easing) var(--main-screen-delay),
+          transform var(--panel-slide-duration) var(--fold-easing),
+          visibility 0s linear var(--panel-slide-duration);
+      }
+
+      /* THE START SCREEN ON A NARROW WINDOW (a phone, or a tablet held
+         upright): the headline at the top, the drawing in the middle,
+         exactly where it will be on the main screen, and below it a panel
+         with the switches and the three modes side by side, in the dock's
+         place (src/sketch.js sets --dock-top). Picking a mode slides the
+         panel down out of the window, and the dock appears where it was. */
+      body.is-narrow .start-screen {
+        display: block;
+        /* the room around the panel's contents */
+        --start-sheet-padding: 16px;
+      }
+      body.is-narrow .start-stage {
+        position: absolute;
+        inset: 0;
+      }
+      body.is-narrow .start-headline {
+        font-size: clamp(30px, 9vw, 44px);
+      }
+      /* the panel would cover the project's name at the bottom left */
+      body.is-narrow .start-footer {
+        display: none;
+      }
+      body.is-narrow .start-modes {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        /* from a padding above the dock's top edge down to the bottom of
+           the window; if its contents need more room (a short phone), it
+           grows upwards instead of being cut off */
+        min-height: calc(100% - (var(--dock-top) - var(--top-bar-height) - var(--start-sheet-padding)));
+        width: auto;
+        display: grid;
+        grid-template-columns: 1fr;
+        align-content: start;
+        gap: 8px;
+        padding: var(--start-sheet-padding) var(--start-margin);
+        border-left: none;
+        border-top: 1px solid var(--line-color);
+      }
+      /* slides down out of the window, instead of out to the right */
+      body.is-narrow:not(.is-starting) .start-modes {
+        translate: 0 100%;
+      }
+      /* the switches next to each other, across the top of the panel */
+      body.is-narrow .start-switches {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: flex-end;
+        gap: 20px;
+        margin: 0 0 4px;
+      }
+      /* the modes look like on a wide window (the label above the name, the
+         arrow on the right), only with less room above and below and a
+         smaller name, so the three of them leave the drawing in view */
+      body.is-narrow .start-mode {
+        row-gap: 6px;
+        padding: 14px 20px;
+      }
+      body.is-narrow .start-mode-name {
+        font-size: 24px;
+      }
+
+      /* NARROW WINDOWS: a phone, or a tablet held upright (src/lib/panels.js
+         decides and sets is-narrow). The panels lie over the drawing there,
+         so a soft shadow sets them apart from it. */
+      body.is-narrow .library {
+        box-shadow: 8px 0 24px rgb(0 0 0 / 0.08);
+      }
+      body.is-narrow .lil-gui.lil-root {
+        box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+      }
+      /* The + marks beyond the grid's corners would fall off the window
+         when the grid fills its width. A drag on the canvas moves an anchor,
+         instead of scrolling or zooming the page. */
+      body.is-narrow .stage-mark {
+        display: none;
+      }
+      body.is-narrow canvas {
+        touch-action: none;
+      }
+
+      /* THE DOCK below the grid on narrow windows (see createDock() in
+         src/sketch.js): the loop bar, then six buttons in a grid of three
+         across and two down. It is as wide as the grid on screen and sits
+         in the middle; src/sketch.js sets how far down (fitView()). On
+         wide windows it isn't there: the panels have the same buttons. */
+      .dock {
+        display: none;
+      }
+      body.is-narrow .dock {
+        position: fixed;
+        left: 50%;
+        /* above the drawing, below the panels, which lie over it */
+        z-index: 999;
+        width: var(--shown-grid-size);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        transform: translateX(-50%);
+      }
+      /* the loop bar takes the whole width, centred under the grid */
+      .dock .panel-progress {
+        flex: none;
+        margin: 0;
+      }
+      .dock-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .dock-buttons .ui-button {
+        height: var(--large-button-height);
+        padding: 0 8px;
+        border-radius: var(--large-radius);
+      }
+
+      /* On a phone the title bar only has room for the two buttons and the
+         name, and the panels need less room around their contents. */
+      @media (max-width: 640px) {
+        :root {
+          --panel-padding: 16px;
+        }
+        .top-bar-title,
+        .top-bar-subtitle {
+          display: none;
+        }
       }
 
       /* the flash when saving: the accent color over the whole window,
@@ -1135,15 +1471,39 @@
       }
 
       /* THE LARGE PREVIEW of a saved variation: a light card over the
-         blurred window */
+         blurred window. The room around the card, inside it and inside the
+         frame is smaller on a phone (see "on a phone" below). If the card
+         is taller than the window, the preview scrolls. */
       .library-preview {
+        --preview-window-padding: 24px;
+        --preview-card-padding: 24px;
+        --preview-frame-padding: 16px;
+        /* how much of the window's width and height is not the picture:
+           the paddings and lines on both sides, and across, the name, the
+           buttons and the gaps between them */
+        --preview-room-across: 160px;
+        --preview-room-down: 354px;
+        /* the picture never gets smaller than this; on a very short window
+           the preview scrolls instead */
+        --preview-smallest-picture: 160px;
+        /* Opening: the blurred veil fades in, and the card rises this far
+           and grows from this size into place. Closing goes back the same
+           way. Once faded out, the preview is invisible, so clicks and the
+           Tab key go past it. */
+        --preview-fade-duration: 300ms;
+        --preview-rise: 16px;
+        --preview-start-scale: 0.97;
         position: fixed;
         inset: 0;
         z-index: 1002;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
+        overflow-y: auto;
+        padding: var(--preview-window-padding);
+        opacity: 0;
+        visibility: hidden;
+        transition:
+          opacity var(--preview-fade-duration) ease,
+          visibility 0s linear var(--preview-fade-duration);
         background: var(--backdrop-color);
         backdrop-filter: blur(6px);
         color: var(--ink-color);
@@ -1154,11 +1514,27 @@
         display: flex;
         flex-direction: column;
         gap: 20px;
-        padding: 24px;
+        /* in the middle of the window; when it is taller than the window,
+           it starts at the top, so nothing is cut off above */
+        margin: auto;
+        padding: var(--preview-card-padding);
+        transform: translateY(var(--preview-rise)) scale(var(--preview-start-scale));
+        transition: transform var(--preview-fade-duration) var(--fold-easing);
         background: var(--page-color);
         border: 1px solid var(--line-color);
         border-radius: 18px;
         box-shadow: 0 24px 64px rgb(0 0 0 / 0.14);
+      }
+      /* open: visible straight away, then faded in, the card in place */
+      .library-preview.is-open {
+        opacity: 1;
+        visibility: visible;
+        transition:
+          opacity var(--preview-fade-duration) ease,
+          visibility 0s;
+      }
+      .library-preview.is-open .library-preview-content {
+        transform: none;
       }
       /* the name, and Close on the right */
       .library-preview-header {
@@ -1185,7 +1561,7 @@
       }
       /* a thin frame around the picture, with a label in each top corner */
       .library-preview-frame {
-        padding: 12px 16px 16px;
+        padding: 12px var(--preview-frame-padding) var(--preview-frame-padding);
         border: 1px solid var(--line-color);
         border-radius: 12px;
       }
@@ -1203,7 +1579,8 @@
          settings above and the export buttons below */
       .library-preview-image {
         display: block;
-        width: min(calc(100vw - 160px), calc(100vh - 354px));
+        width: min(calc(100vw - var(--preview-room-across)), calc(100vh - var(--preview-room-down)));
+        min-width: var(--preview-smallest-picture);
         aspect-ratio: 1;
         object-fit: contain;
         border-radius: var(--radius);
@@ -1223,9 +1600,9 @@
         object-fit: contain;
         pointer-events: none;
       }
-      /* the two rows of buttons: under the name, Grid, Anchors and
-         Background on the left and the PNG resolution on the right; below
-         the frame, PNG, SVG and MP4 on the left */
+      /* the two rows of buttons, both starting on the left: under the name,
+         Grid, Anchors and Background; below the frame, the PNG resolution,
+         then PNG, SVG and MP4 */
       .library-preview-bar {
         display: flex;
         flex-wrap: wrap;
@@ -1237,22 +1614,16 @@
         width: 0;
         min-width: 100%;
       }
-      /* the last group of a row stays on the right, also when it wraps
-         onto a row of its own */
-      .library-preview-buttons:last-child {
-        margin-left: auto;
-      }
+      /* a group's buttons move onto another line when they don't fit next
+         to each other, so they never reach past the picture */
       .library-preview-buttons {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
-      }
-      /* PNG, SVG and MP4 start on the left, under Grid */
-      .library-preview-buttons.library-preview-exports {
-        margin-left: 0;
       }
       .library-preview-bar .ui-button {
         height: var(--large-button-height);
-        padding: 0 20px;
+        padding: 0 var(--preview-button-padding, 20px);
         gap: 10px;
       }
       /* the PNG resolution field: a grey button that opens a short list.
@@ -1278,6 +1649,51 @@
       }
       .library-preview-bar .ui-button.is-on:hover {
         background: color-mix(in srgb, var(--accent-color) 32%, var(--card-color));
+      }
+      /* on a phone: less room around the card, inside it and inside the
+         frame, and narrower buttons, so the picture gets more of the width.
+         The buttons take two lines each, so more of the height is not the
+         picture. */
+      @media (max-width: 640px) {
+        .library-preview {
+          --preview-window-padding: 12px;
+          --preview-card-padding: 16px;
+          --preview-frame-padding: 12px;
+          --preview-button-padding: 14px;
+          --preview-room-across: 88px;
+          --preview-room-down: 460px;
+        }
+        .library-preview-name {
+          font-size: 22px;
+        }
+      }
+
+      /* THE CHANGE BETWEEN LIGHT AND DARK (the Invert switch): the whole
+         page, the drawing included, fades from the old colors into the
+         new ones. src/sketch.js asks the browser for this (a "view
+         transition", see invertColorsSmoothly()); these set how long the
+         fade takes and how it eases. Browsers without view transitions
+         change the colors at once. */
+      :root {
+        --theme-fade-duration: 500ms;
+      }
+      ::view-transition-old(root),
+      ::view-transition-new(root) {
+        animation-duration: var(--theme-fade-duration);
+        animation-timing-function: ease-in-out;
+      }
+
+      /* Someone who asked their computer for less motion gets the popup
+         and the colors without the fades. */
+      @media (prefers-reduced-motion: reduce) {
+        .library-preview,
+        .library-preview-content {
+          transition: none;
+        }
+        ::view-transition-old(root),
+        ::view-transition-new(root) {
+          animation: none;
+        }
       }
     </style>
   </head>

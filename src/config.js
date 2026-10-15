@@ -42,3 +42,11 @@ export const foregroundColor = { r: 40, g: 40, b: 40 };
 // Also the color of selected cards and switched-on buttons in the library.
 // A green dark enough to read on the light paper.
 export const accentColor = { r: 20, g: 196, b: 40 };
+
+// The other end of the gradients, while Gradient in the Colors folder is
+// on: the drawing runs from foregroundColor to foregroundEndColor, the
+// background from backgroundColor to backgroundEndColor (Main 2 and
+// Background 2 in the panel). Make an end the same as its start to keep
+// that part one color.
+export const foregroundEndColor = { r: 40, g: 90, b: 230 };
+export const backgroundEndColor = { r: 214, g: 214, b: 206 };
