@@ -1330,6 +1330,69 @@
           visibility 0s linear var(--panel-slide-duration);
       }
 
+      /* THE START SCREEN ON A NARROW WINDOW (a phone, or a tablet held
+         upright): the headline at the top, the drawing in the middle,
+         exactly where it will be on the main screen, and below it a panel
+         with the switches and the three modes side by side, in the dock's
+         place (src/sketch.js sets --dock-top). Picking a mode slides the
+         panel down out of the window, and the dock appears where it was. */
+      body.is-narrow .start-screen {
+        display: block;
+        /* the room around the panel's contents */
+        --start-sheet-padding: 16px;
+      }
+      body.is-narrow .start-stage {
+        position: absolute;
+        inset: 0;
+      }
+      body.is-narrow .start-headline {
+        font-size: clamp(30px, 9vw, 44px);
+      }
+      /* the panel would cover the project's name at the bottom left */
+      body.is-narrow .start-footer {
+        display: none;
+      }
+      body.is-narrow .start-modes {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        /* from a padding above the dock's top edge down to the bottom of
+           the window; if its contents need more room (a short phone), it
+           grows upwards instead of being cut off */
+        min-height: calc(100% - (var(--dock-top) - var(--top-bar-height) - var(--start-sheet-padding)));
+        width: auto;
+        display: grid;
+        grid-template-columns: 1fr;
+        align-content: start;
+        gap: 8px;
+        padding: var(--start-sheet-padding) var(--start-margin);
+        border-left: none;
+        border-top: 1px solid var(--line-color);
+      }
+      /* slides down out of the window, instead of out to the right */
+      body.is-narrow:not(.is-starting) .start-modes {
+        translate: 0 100%;
+      }
+      /* the switches next to each other, across the top of the panel */
+      body.is-narrow .start-switches {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: flex-end;
+        gap: 20px;
+        margin: 0 0 4px;
+      }
+      /* the modes look like on a wide window (the label above the name, the
+         arrow on the right), only with less room above and below and a
+         smaller name, so the three of them leave the drawing in view */
+      body.is-narrow .start-mode {
+        row-gap: 6px;
+        padding: 14px 20px;
+      }
+      body.is-narrow .start-mode-name {
+        font-size: 24px;
+      }
+
       /* NARROW WINDOWS: a phone, or a tablet held upright (src/lib/panels.js
          decides and sets is-narrow). The panels lie over the drawing there,
          so a soft shadow sets them apart from it. */

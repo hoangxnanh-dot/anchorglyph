@@ -3165,7 +3165,11 @@ function fitView() {
   const blockTop = topBarHeight + Math.max(0, (windowHeight - topBarHeight - blockHeight) / 2);
   const gridScreenTop = blockTop + STAGE_LABEL_ROOM;
   view.gridTop = gridScreenTop / view.scale;
-  dock.element.style.top = `${gridScreenTop + shownGridSize + STAGE_LABEL_ROOM + DOCK_GAP}px`;
+  const dockTop = gridScreenTop + shownGridSize + STAGE_LABEL_ROOM + DOCK_GAP;
+  dock.element.style.top = `${dockTop}px`;
+  // the start screen puts its panel of modes in the dock's place on a
+  // narrow window (see index.html), so it is told where that is
+  document.documentElement.style.setProperty('--dock-top', `${dockTop}px`);
 
   const canvasWidth = windowWidth / view.scale;
   const canvasHeight = windowHeight / view.scale;
