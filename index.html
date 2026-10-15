@@ -1346,15 +1346,39 @@
       }
 
       /* THE LARGE PREVIEW of a saved variation: a light card over the
-         blurred window */
+         blurred window. The room around the card, inside it and inside the
+         frame is smaller on a phone (see "on a phone" below). If the card
+         is taller than the window, the preview scrolls. */
       .library-preview {
+        --preview-window-padding: 24px;
+        --preview-card-padding: 24px;
+        --preview-frame-padding: 16px;
+        /* how much of the window's width and height is not the picture:
+           the paddings and lines on both sides, and across, the name, the
+           buttons and the gaps between them */
+        --preview-room-across: 160px;
+        --preview-room-down: 354px;
+        /* the picture never gets smaller than this; on a very short window
+           the preview scrolls instead */
+        --preview-smallest-picture: 160px;
+        /* Opening: the blurred veil fades in, and the card rises this far
+           and grows from this size into place. Closing goes back the same
+           way. Once faded out, the preview is invisible, so clicks and the
+           Tab key go past it. */
+        --preview-fade-duration: 300ms;
+        --preview-rise: 16px;
+        --preview-start-scale: 0.97;
         position: fixed;
         inset: 0;
         z-index: 1002;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
+        overflow-y: auto;
+        padding: var(--preview-window-padding);
+        opacity: 0;
+        visibility: hidden;
+        transition:
+          opacity var(--preview-fade-duration) ease,
+          visibility 0s linear var(--preview-fade-duration);
         background: var(--backdrop-color);
         backdrop-filter: blur(6px);
         color: var(--ink-color);
@@ -1365,11 +1389,27 @@
         display: flex;
         flex-direction: column;
         gap: 20px;
-        padding: 24px;
+        /* in the middle of the window; when it is taller than the window,
+           it starts at the top, so nothing is cut off above */
+        margin: auto;
+        padding: var(--preview-card-padding);
+        transform: translateY(var(--preview-rise)) scale(var(--preview-start-scale));
+        transition: transform var(--preview-fade-duration) var(--fold-easing);
         background: var(--page-color);
         border: 1px solid var(--line-color);
         border-radius: 18px;
         box-shadow: 0 24px 64px rgb(0 0 0 / 0.14);
+      }
+      /* open: visible straight away, then faded in, the card in place */
+      .library-preview.is-open {
+        opacity: 1;
+        visibility: visible;
+        transition:
+          opacity var(--preview-fade-duration) ease,
+          visibility 0s;
+      }
+      .library-preview.is-open .library-preview-content {
+        transform: none;
       }
       /* the name, and Close on the right */
       .library-preview-header {
@@ -1396,7 +1436,7 @@
       }
       /* a thin frame around the picture, with a label in each top corner */
       .library-preview-frame {
-        padding: 12px 16px 16px;
+        padding: 12px var(--preview-frame-padding) var(--preview-frame-padding);
         border: 1px solid var(--line-color);
         border-radius: 12px;
       }
@@ -1414,7 +1454,8 @@
          settings above and the export buttons below */
       .library-preview-image {
         display: block;
-        width: min(calc(100vw - 160px), calc(100vh - 354px));
+        width: min(calc(100vw - var(--preview-room-across)), calc(100vh - var(--preview-room-down)));
+        min-width: var(--preview-smallest-picture);
         aspect-ratio: 1;
         object-fit: contain;
         border-radius: var(--radius);
@@ -1434,9 +1475,9 @@
         object-fit: contain;
         pointer-events: none;
       }
-      /* the two rows of buttons: under the name, Grid, Anchors and
-         Background on the left and the PNG resolution on the right; below
-         the frame, PNG, SVG and MP4 on the left */
+      /* the two rows of buttons, both starting on the left: under the name,
+         Grid, Anchors and Background; below the frame, the PNG resolution,
+         then PNG, SVG and MP4 */
       .library-preview-bar {
         display: flex;
         flex-wrap: wrap;
@@ -1448,22 +1489,16 @@
         width: 0;
         min-width: 100%;
       }
-      /* the last group of a row stays on the right, also when it wraps
-         onto a row of its own */
-      .library-preview-buttons:last-child {
-        margin-left: auto;
-      }
+      /* a group's buttons move onto another line when they don't fit next
+         to each other, so they never reach past the picture */
       .library-preview-buttons {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
-      }
-      /* PNG, SVG and MP4 start on the left, under Grid */
-      .library-preview-buttons.library-preview-exports {
-        margin-left: 0;
       }
       .library-preview-bar .ui-button {
         height: var(--large-button-height);
-        padding: 0 20px;
+        padding: 0 var(--preview-button-padding, 20px);
         gap: 10px;
       }
       /* the PNG resolution field: a grey button that opens a short list.
@@ -1489,6 +1524,51 @@
       }
       .library-preview-bar .ui-button.is-on:hover {
         background: color-mix(in srgb, var(--accent-color) 32%, var(--card-color));
+      }
+      /* on a phone: less room around the card, inside it and inside the
+         frame, and narrower buttons, so the picture gets more of the width.
+         The buttons take two lines each, so more of the height is not the
+         picture. */
+      @media (max-width: 640px) {
+        .library-preview {
+          --preview-window-padding: 12px;
+          --preview-card-padding: 16px;
+          --preview-frame-padding: 12px;
+          --preview-button-padding: 14px;
+          --preview-room-across: 88px;
+          --preview-room-down: 460px;
+        }
+        .library-preview-name {
+          font-size: 22px;
+        }
+      }
+
+      /* THE CHANGE BETWEEN LIGHT AND DARK (the Invert switch): the whole
+         page, the drawing included, fades from the old colors into the
+         new ones. src/sketch.js asks the browser for this (a "view
+         transition", see invertColorsSmoothly()); these set how long the
+         fade takes and how it eases. Browsers without view transitions
+         change the colors at once. */
+      :root {
+        --theme-fade-duration: 500ms;
+      }
+      ::view-transition-old(root),
+      ::view-transition-new(root) {
+        animation-duration: var(--theme-fade-duration);
+        animation-timing-function: ease-in-out;
+      }
+
+      /* Someone who asked their computer for less motion gets the popup
+         and the colors without the fades. */
+      @media (prefers-reduced-motion: reduce) {
+        .library-preview,
+        .library-preview-content {
+          transition: none;
+        }
+        ::view-transition-old(root),
+        ::view-transition-new(root) {
+          animation: none;
+        }
       }
     </style>
   </head>

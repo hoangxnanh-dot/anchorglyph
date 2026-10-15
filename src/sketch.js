@@ -107,7 +107,7 @@ import { traceOutlines, outlinesToPathData } from './lib/trace.js';
 import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
-  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON,
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, RESET_ICON,
 } from './lib/icons.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
@@ -2752,7 +2752,7 @@ function addControlsSection(gui) {
   actions.className = 'panel-section-actions';
   actions.append(
     makeButton('Randomize All', randomizeAll, RANDOMIZE_ICON),
-    makeButton('Reset All', resetEverything, RESTART_ICON),
+    makeButton('Reset All', resetEverything, RESET_ICON),
   );
   gui.$children.append(heading, actions);
 }
@@ -2858,7 +2858,7 @@ function createDock() {
     stopButton,
     makeButton('Randomize', randomizeAll, RANDOMIZE_ICON),
     makeButton('Save', () => library.save(), SAVE_ICON),
-    makeButton('Reset', resetEverything, RESTART_ICON),
+    makeButton('Reset', resetEverything, RESET_ICON),
   );
 
   const element = document.createElement('div');
@@ -2941,8 +2941,21 @@ const invertSwitchSettings = {
   label: 'Invert',
   title: 'Invert all colors',
   isOn: () => uiParams.invertColors,
-  onClick: () => invertColors(),
+  onClick: () => invertColorsSmoothly(),
 };
+
+// Inverts the colors with a fade: the browser keeps a picture of the page
+// as it is, inverts the colors, and fades the picture out over the page in
+// its new colors, the drawing included (a "view transition"). How long it
+// takes is --theme-fade-duration in index.html. Browsers that can't do
+// this (older Firefox) invert the colors at once.
+function invertColorsSmoothly() {
+  if (!document.startViewTransition) {
+    invertColors();
+    return;
+  }
+  document.startViewTransition(() => invertColors());
+}
 
 // The start screen's Anchors switch: shows or hides the anchors there, see
 // startGuides.

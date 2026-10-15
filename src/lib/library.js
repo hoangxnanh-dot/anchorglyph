@@ -199,8 +199,10 @@ export function createLibrary({ capture, apply }) {
 
   // the large preview, on top of everything
   const preview = document.createElement('div');
+  // It is always on the page, but invisible until it is opened: the class
+  // is-open fades it in, and taking it away fades it out (see "the large
+  // preview" in index.html).
   preview.className = 'library-preview';
-  preview.hidden = true;
   preview.setAttribute('role', 'dialog');
   preview.setAttribute('aria-modal', 'true');
 
@@ -237,9 +239,8 @@ export function createLibrary({ capture, apply }) {
   anchorsLayer.className = 'library-preview-layer';
   previewStage.append(previewImage, gridLayer, anchorsLayer);
 
-  // the settings under the name: the two guides and the background on the
-  // left, the PNG resolution on the right. The exports sit below the
-  // picture, on the left.
+  // the settings under the name: the two guides and the background. Below
+  // the picture: the PNG resolution, then the exports.
   const gridToggle = makeButton('Grid', () => toggleLayer('showGrid'), dotGridIcon());
   const anchorsToggle = makeButton('Anchors', () => toggleLayer('showAnchors'), ANCHOR_ICON);
   const backgroundToggle = makeButton('Background', () => toggleLayer('showBackground'), BACKGROUND_ICON);
@@ -268,16 +269,15 @@ export function createLibrary({ capture, apply }) {
   const videoButton = makeButton('MP4', () => exportPreview('mp4'), VIDEO_ICON);
   // set while an MP4 is being made, see exportVideo()
   let videoExporting = false;
-  const resolutionButtons = document.createElement('div');
-  resolutionButtons.className = 'library-preview-buttons';
-  resolutionButtons.append(resolutionField);
   const previewSettings = document.createElement('div');
   previewSettings.className = 'library-preview-bar';
-  previewSettings.append(guideButtons, resolutionButtons);
+  previewSettings.append(guideButtons);
 
+  // the resolution first, so it is picked before the PNG is saved
   const exportButtons = document.createElement('div');
-  exportButtons.className = 'library-preview-buttons library-preview-exports';
+  exportButtons.className = 'library-preview-buttons';
   exportButtons.append(
+    resolutionField,
     makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
     makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
     videoButton,
@@ -307,7 +307,7 @@ export function createLibrary({ capture, apply }) {
   // key reaches the sketch, so Space doesn't pause the drawing behind it.
   // `true` hears every key before the sketch and the control panel do.
   window.addEventListener('keydown', (event) => {
-    if (preview.hidden) return;
+    if (!isPreviewOpen()) return;
     event.stopPropagation();
     if (event.key === 'Escape') closePreview();
   }, true);
@@ -443,12 +443,16 @@ export function createLibrary({ capture, apply }) {
     showPreviewLayers();
 
     preview.setAttribute('aria-label', `Preview of ${variation.name}`);
-    preview.hidden = false;
+    preview.classList.add('is-open');
     closePreviewButton.focus();
   }
 
   function closePreview() {
-    preview.hidden = true;
+    preview.classList.remove('is-open');
+  }
+
+  function isPreviewOpen() {
+    return preview.classList.contains('is-open');
   }
 
   // Grid and Anchors: show or hide that guide on the preview

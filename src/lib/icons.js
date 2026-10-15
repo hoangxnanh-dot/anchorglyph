@@ -46,8 +46,11 @@ export const EYE_OPEN_ICON = lineIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 
 export const EYE_CLOSED_ICON = lineIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="21" x2="21" y2="3"/>');
 // Randomize: two crossing arrows, the "shuffle" sign of music players
 export const RANDOMIZE_ICON = lineIcon('<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>');
-// Reset All and Restart: an arrow turning back on itself
+// Restart: an arrow turning back on itself
 export const RESTART_ICON = lineIcon('<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>');
+// Reset All: two arrows chasing each other around a circle, so it doesn't
+// look like Restart
+export const RESET_ICON = lineIcon('<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><polyline points="16 16 21 16 21 21"/>');
 // More: three dots in a row
 export const MORE_ICON = lineIcon('<circle cx="5" cy="12" r="0.75"/><circle cx="12" cy="12" r="0.75"/><circle cx="19" cy="12" r="0.75"/>');
 
