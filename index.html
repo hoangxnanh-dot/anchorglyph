@@ -424,6 +424,18 @@
         opacity: 0;
         pointer-events: none;
       }
+      /* The two panels also slide in from the window's edges while they
+         fade in, and back out while they fade out: the library from the
+         left, the control panel from the right. This uses `translate`, not
+         `transform`, since the panels' transform already folds them away;
+         the two add up. How fast and smooth the slide is, is set with the
+         panels' other transitions, under "folded panels". */
+      body.is-starting .library {
+        translate: -100% 0;
+      }
+      body.is-starting .lil-gui.lil-root {
+        translate: 100% 0;
+      }
       .start-screen {
         /* how wide the column of cards is: a third of the window, so the
            cards grow and shrink with it, but never narrower than this */
@@ -1216,15 +1228,23 @@
          it also turns invisible, so the Tab key skips what is in it; when
          it comes back it is visible straight away, before it slides in. */
       :root {
-        --fold-duration: 450ms;
         /* fast at first, then slowing down gently, like the library's cards */
         --fold-easing: cubic-bezier(0.22, 1, 0.36, 1);
+        /* how long the panels take to slide in or out: when a mode is
+           picked or the start screen comes back, and when the buttons fold
+           them away or bring them back. The same slide everywhere. */
+        --panel-slide-duration: 800ms;
       }
+      /* Every transition of the two panels, in one list: a rule that sets
+         `transition` replaces the whole list, so they can't be split up.
+         The fade and the slide in from the edges (translate) follow the
+         start screen; the fold (transform) follows the buttons. */
       .library,
       .lil-gui.lil-root {
         transition:
           opacity var(--fade-duration) ease var(--main-screen-delay),
-          transform var(--fold-duration) var(--fold-easing),
+          translate var(--panel-slide-duration) var(--fold-easing) var(--main-screen-delay),
+          transform var(--panel-slide-duration) var(--fold-easing),
           visibility 0s;
       }
       body.is-library-folded .library {
@@ -1238,8 +1258,9 @@
         visibility: hidden;
         transition:
           opacity var(--fade-duration) ease var(--main-screen-delay),
-          transform var(--fold-duration) var(--fold-easing),
-          visibility 0s linear var(--fold-duration);
+          translate var(--panel-slide-duration) var(--fold-easing) var(--main-screen-delay),
+          transform var(--panel-slide-duration) var(--fold-easing),
+          visibility 0s linear var(--panel-slide-duration);
       }
 
       /* NARROW WINDOWS: a phone, or a tablet held upright (src/lib/panels.js
