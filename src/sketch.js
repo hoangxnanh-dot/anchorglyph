@@ -9,6 +9,11 @@
 // Grid Template provided by Bernhard Hoffmann
 //
 //
+// Start screen
+//
+// The sketch opens on a start screen: point at a mode to see it drawn on
+// the left, click it to start working in that mode. See src/lib/start.js.
+//
 // Concept
 //
 // The tool generates random anchor points within a grid
@@ -41,6 +46,8 @@
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
 // Randomize All       New grid, anchors, spline, colors, drift and speed at once.
+// Dots (···)          On the Controls headline: close every folder, or open
+//                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
 // Clear / Restore     Remove every anchor. In 'Glyph' it is called Restore
 //                     and brings back the anchors of the text instead.
@@ -52,10 +59,18 @@
 // Eye icons           The eye on the Grid and Anchors folders hides or shows
 //                     the grid, or the anchors and their numbers.
 // H – Hide Guides     Hide or show the grid and the anchors together.
-// G – Hide UI         Hide or show the control panel and the library.
+// Invert              The switch next to the Modes headline: light becomes
+//                     dark and dark becomes light, in the panels and in the
+//                     drawing (Main and Background). The accent stays.
+// G – Hide UI         Hide or show the control panel, the library, the
+//                     title bar and the labels around the grid.
 // T – Toggle folders  Close every folder in the control panel, or open them
 //                     all again if they are all closed. Modes stays open.
 // Space – Pause/Play  Pause or continue the animation.
+// Playback            Restart draws from the beginning, Play/Pause pauses or
+//                     continues, Stop starts over and waits for Play. The
+//                     bar shows how far the Animation loop has come; drag
+//                     it to jump to another moment of the loop.
 // R – Randomize All   Randomize EVERYTHING.
 // C – Reset All       Every setting back to how the sketch opens (same as
 //                     the Reset All button). The mode stays.
@@ -76,10 +91,19 @@
 // p5 version 1 and will not work here. See the README.
 
 import p5 from 'p5';
-import { createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, colorPanelInAccent } from './lib/gui.js';
+import {
+  createGUI, addSwitch, addCycler, addEyeToggle, addRandomizeIcon, applyAccentColor, createSwitchButton,
+  makeButton, makeIconButton, setButtonIcon,
+} from './lib/gui.js';
 import { createLibrary } from './lib/library.js';
-import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle } from './config.js';
+import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle, projectSubtitle } from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
+import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
+import { traceOutlines, outlinesToPathData } from './lib/trace.js';
+import { Easings } from './lib/easings.js';
+import {
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, dotGridIcon,
+} from './lib/icons.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
 // builds up slowly and the anchors stay calm.
@@ -142,12 +166,15 @@ const iterationRanges = { driftReach: driftReachRange, speed: speedRange };
 // be at least, measured as a distance between the two colors (0 = the same,
 // about 441 = black and white). Otherwise the drawing could vanish.
 const MIN_COLOR_CONTRAST = 150;
+// The highest value a color channel can have. Inverting a channel turns
+// 0 into this and this into 0.
+const MAX_CHANNEL = 255;
 
 // The values the control panel changes. The colors start at whatever you set
 // in src/config.js, and are { r, g, b } objects with channels from 0 to 255.
 const uiParams = {
   text: startingText,
-  textSize: 300,       // the middle of the Size slider (100 to 500)
+  textSize: 500,       // the Size slider (150 to 900)
 
   columns: STARTING_COLUMNS,
   rows: STARTING_ROWS,
@@ -185,11 +212,16 @@ const uiParams = {
   foregroundColor,
   backgroundColor,
   accentColor,
+  invertColors: false, // the Invert switch: true = Main and Background turned around, dark panels
 };
 
 // A copy of every value as the sketch opens with it, for "Reset All". It is a
 // real copy (structuredClone), so changing a color later doesn't change it.
 const startingParams = structuredClone(uiParams);
+
+// The three modes, in the order of the switch in the panel and the cards on
+// the start screen.
+const anchorModes = ['Glyph', 'Shape', 'Animation'];
 
 // Animation mode starts with more anchors, for more movement.
 const ANIMATION_ANCHOR_COUNT = 50;
@@ -271,6 +303,13 @@ const NOISE_SPACING = 10;
 const CELL_PULSE_SCALE = 0.2;
 const CELL_PULSE_TURNS = 3;
 
+// How many ink pixels each pixel of the grid has, across and down, in Single
+// view. At 2 the ink layer has 4 times the pixels: lines and grain land
+// more precisely, so the PNG and SVG exports and a Retina screen show finer
+// detail. Higher costs time every frame. Multiple view keeps 1: its
+// iterations are small on screen, and there are many of them.
+const INK_SCALE = 2;
+
 // 'Glyph' mode: the empty space kept around the text, as a share of the grid
 // on each side.
 const FONT_MARGIN = 0.1;
@@ -279,16 +318,21 @@ const FONT_MARGIN = 0.1;
 // its shape fills the whole cell. Higher = shapes grow more slowly.
 const CELL_FULL_LINES = 8;
 // SVG export of the curve styles: how many shades of ink are kept. More
-// shades look closer to the screen but make a bigger file.
-const SVG_INK_LEVELS = 32;
+// shades make a bigger file. Above 16 the difference no longer shows, while
+// the file keeps growing.
+const SVG_INK_LEVELS = 16;
 // SVG export: positions are rounded to this many decimals; more would only
 // make the file longer.
 const SVG_DECIMALS = 2;
+// SVG export of the curve styles: the outlines of the ink are rounded to
+// this many decimals. A tenth of a pixel is finer than the eye sees, and
+// the outlines have many points, so fewer decimals keep the file smaller.
+const TRACE_DECIMALS = 1;
 
 // How the guides look. Opacities run from 0 (invisible) to 255 (solid).
 const guideStyle = {
   gridLineColor: { r: 128, g: 128, b: 128 },
-  gridLineOpacity: 120,
+  gridLineOpacity: 60,
   polygonOpacity: 90,    // the straight lines between the anchors
   cellShapeOpacity: 60,  // the see-through shapes on anchors in the cell styles
   anchorDotSize: 7,
@@ -297,6 +341,8 @@ const guideStyle = {
 };
 // The opacities above run to 255, as in p5; SVG files count them up to 1.
 const SVG_FULL_OPACITY = 255;
+// Full opacity, for the parts of the guides that are otherwise solid.
+const SOLID = 255;
 
 // How close (in pixels) the mouse has to be to an anchor to grab it, and how
 // far it has to move before a click counts as a drag.
@@ -350,18 +396,41 @@ let dragging = null;
 let anchorCountPerMode = { Shape: uiParams.anchorCount, Animation: ANIMATION_ANCHOR_COUNT };
 let lastGridMode = 'Shape';
 
-// The ink layer: one number per pixel of the grid, 0 = empty, 1 = fully
-// inked. `inkImage` is the picture it is turned into for the screen.
+// The ink layer: one number per ink pixel, 0 = empty, 1 = fully inked.
+// It is square, with INK_SCALE ink pixels per grid pixel each way (1 in
+// Multiple view). `inkImages` are the pictures it is turned into for the
+// screen, one per layer size, with the Main color they were last given;
+// see drawInk().
 let ink;
-let inkImage;
+const inkImages = new Map();
 
 // The control panel, the library of saved variations on the left, and the
 // panel controls the code changes or hides after they are made.
 let panel;
 let library;
-let stageTitle;
-// The project title across the top of the window, see createProjectTitle().
-let projectHeadline;
+// The title bar across the top of the window, see createTopBar(), and how
+// tall it is. The height is measured once: a hidden bar measures 0.
+let topBar;
+let topBarHeight = 0;
+// The labels and corner marks around the grid, see createStageFrame().
+let stageFrame;
+// The start screen (see src/lib/start.js), and how much of it is left: 1
+// while it is open, 0 once the main screen is there, and in between while
+// one changes into the other. It moves the grid and fades the guides in.
+let startScreen;
+let startScreenAmount = 1;
+// The change between the start screen and the main screen, while it runs:
+// { from, to, startTime }, with startTime in p5's millis(). Otherwise null.
+let startTransition = null;
+// What the start screen shows of the guides. The grid never shows there;
+// the anchors have a switch of their own on the start screen, which starts
+// off, so the start screen shows the drawing alone. The eyes in the panel
+// are separate.
+const startGuides = { showGrid: false, showAnchors: false };
+// Where the grid's left edge is on the start screen: in the middle of the
+// start screen's left part. Measured while the start screen shows, see
+// updateStartTransition().
+let startGridLeft = 0;
 let playbackControls;
 let anchorModeController;
 let glyphControllers = [];
@@ -379,11 +448,14 @@ let viewModeController;
 let iterationsPerRowController;
 let textureController;
 let slantController;
+let invertSwitch;
 
 window.setup = async function setup() {
   createCanvas(windowWidth, windowHeight);
-  ink = new Float32Array(gridSize * gridSize);
-  inkImage = createImage(gridSize, gridSize);
+  // at least as many canvas pixels as ink pixels, also on screens that
+  // aren't Retina, so the saved picture keeps the ink's full detail
+  pixelDensity(max(pixelDensity(), INK_SCALE));
+  ink = newInkLayer(INK_SCALE);
   // always the starting font from src/config.js: the panel has no font picker
   selectedFont = await applyFont(defaultFont);
   // the starting mode decides where the first anchors come from
@@ -407,13 +479,20 @@ window.draw = function draw() {
   // then starts over with the background below, so it never shows.
   if (iterationSaveWaiting) saveClickedIteration();
 
+  updateStartTransition();
+
   background(uiParams.backgroundColor.r, uiParams.backgroundColor.g, uiParams.backgroundColor.b);
   if (isMultipleView()) drawIterations();
   else drawSingle(stepsThisFrame());
 
+  // the page around the canvas follows the grid and the drawing
+  updateStageFrame();
+  updatePlaybackProgress();
+
   // a hand cursor shows which anchors can be grabbed, or in Multiple view
   // which iteration a click saves
-  if (dragging) cursor('grabbing');
+  if (!isOnMainScreen()) cursor('default');
+  else if (dragging) cursor('grabbing');
   else if (anchorUnderMouse()) cursor('grab');
   else if (isMultipleView() && iterationUnderMouse() >= 0) cursor(HAND);
   else cursor('default');
@@ -432,6 +511,45 @@ function drawSingle(steps) {
   }
   drawGuides();
   pop();
+}
+
+// The start screen fades out over START_TRANSITION_DURATION once a mode is
+// picked, and back in when the project's name is clicked. Every frame, this
+// works out how far that has come: slow at first, fast in the middle, slow
+// at the end (cubicInOut).
+function updateStartTransition() {
+  if (startScreenAmount > 0 || startTransition) startGridLeft = (startScreen.stageWidth() - gridSize) / 2;
+  if (!startTransition) return;
+  const { from, to, startTime } = startTransition;
+  const progress = constrain((millis() - startTime) / START_TRANSITION_DURATION, 0, 1);
+  startScreenAmount = lerp(from, to, Easings.cubicInOut(progress));
+  if (progress === 1) startTransition = null;
+}
+
+// Starts the change towards the start screen (`to` = 1) or the main screen
+// (`to` = 0), from wherever it is now, so a change can also be turned back
+// halfway.
+function moveStartScreen(to) {
+  startTransition = { from: startScreenAmount, to, startTime: millis() };
+}
+
+// How much a guide ('showGrid' or 'showAnchors') shows, from 0 to 1: on the
+// main screen whether its eye in the panel is open, on the start screen
+// whether its switch there is on, and a blend of the two while one changes
+// into the other, so it fades in or out.
+function guideVisibility(guide) {
+  return lerp(Number(uiParams[guide]), Number(startGuides[guide]), startScreenAmount);
+}
+
+// The drawing only reacts to the mouse on the main screen. On the start
+// screen, and while one changes into the other, it is only to look at.
+function isOnMainScreen() {
+  return startScreenAmount === 0;
+}
+
+// An opacity for a guide, from 0 to 255: `opacity` as far as the guide shows.
+function guideOpacity(opacity, guide) {
+  return opacity * guideVisibility(guide);
 }
 
 // The drawing moves on by `steps`: the anchors drift (or follow their loop
@@ -454,9 +572,11 @@ function drawInkLayer() {
   else drawInk();
 }
 
+// The grid and the anchors, if they show. On the start screen its own
+// switches decide, on the main screen the eyes in the panel.
 function drawGuides() {
-  if (uiParams.showGrid) drawGridLines();
-  if (uiParams.showAnchors) drawAnchors();
+  if (guideVisibility('showGrid') > 0) drawGridLines();
+  if (guideVisibility('showAnchors') > 0) drawAnchors();
 }
 
 function isMultipleView() {
@@ -517,7 +637,7 @@ function drawIterations() {
   });
 
   // a click on it saves this one to the library
-  const hovered = iterationUnderMouse();
+  const hovered = isOnMainScreen() ? iterationUnderMouse() : -1;
   if (hovered >= 0) {
     const { x, y, size } = iterationPlace(hovered);
     const { r, g, b } = uiParams.accentColor;
@@ -590,7 +710,7 @@ function buildIterations() {
     // p5's shuffle(); `true` shuffles the copy itself, yours stay in order
     shuffle(ownAnchors, true);
     return {
-      ink: new Float32Array(gridSize * gridSize),
+      ink: newInkLayer(1),
       anchors: ownAnchors,
       settings: Object.fromEntries(
         Object.entries(iterationRanges).map(([settingName, range]) => [settingName, randomSliderValue(range)]),
@@ -830,6 +950,12 @@ function driftAnchors() {
 // every anchor is back at its start and the motion repeats without a jump.
 function loopAnchors() {
   loopStep = (loopStep + 1) % uiParams.loopLength;
+  placeAnchorsOnLoop();
+}
+
+// Puts every anchor where its path is at the current loopStep. The path
+// only depends on loopStep, so this also works for a jump to any moment.
+function placeAnchorsOnLoop() {
   const angle = loopAngle();
   // a bigger circle crosses more of the noise field, so more changes of direction
   const circleX = Math.cos(angle) * uiParams.loopWobble;
@@ -844,6 +970,22 @@ function loopAnchors() {
     anchor.dy = map(noiseY, 0, 1, -cellHeight, cellHeight) * uiParams.driftReach;
     keepNearHome(anchor, uiParams.driftReach);
   });
+}
+
+// The Playback bar, dragged: jumps to `share` of the way through the
+// Animation loop (0 = its start, 1 = its end). The anchors jump there right
+// away, also while paused. The ink already drawn stays. In Multiple view
+// every iteration jumps to the same moment of its own loop.
+function seekLoop(share) {
+  if (uiParams.anchorMode !== 'Animation') return;
+  // the last step of a loop is loopLength - 1; loopLength is its start again
+  const step = constrain(round(share * uiParams.loopLength), 0, uiParams.loopLength - 1);
+  const jump = () => {
+    loopStep = step;
+    placeAnchorsOnLoop();
+  };
+  if (isMultipleView()) iterations.forEach((iteration) => withIteration(iteration, jump));
+  else jump();
 }
 
 // An anchor may drift at most `reach` cells away from its spot (its cell, or
@@ -879,6 +1021,22 @@ function pulse(phase) {
 function cellPulse(row, column) {
   const turns = noise(column * CELL_PULSE_SCALE, row * CELL_PULSE_SCALE) * CELL_PULSE_TURNS;
   return pulse(turns * TWO_PI);
+}
+
+// An empty ink layer with `scale` ink pixels per grid pixel each way.
+function newInkLayer(scale) {
+  return new Float32Array((gridSize * scale) ** 2);
+}
+
+// How many ink pixels wide an ink layer is. Layers are square.
+function layerSize(layer) {
+  return round(sqrt(layer.length));
+}
+
+// How many ink pixels the current ink layer has per grid pixel, each way:
+// INK_SCALE for the drawing in Single view, 1 for an iteration.
+function inkScale() {
+  return layerSize(ink) / gridSize;
 }
 
 // Animation mode: every bit of ink loses a little strength each step, so old
@@ -1073,15 +1231,20 @@ function paintMarks(anchorPoints) {
 // switches off again.
 function fillInside(points, segments) {
   const pieceCount = segments * FILL_PIECES_PER_SEGMENT;
+  // the rows and columns here are the ink layer's, so the corners are
+  // measured in ink pixels
+  const scale = inkScale();
+  const size = layerSize(ink);
   const corners = [];
   for (let piece = 0; piece < pieceCount; piece++) {
-    corners.push(pointOnSpline(points, piece / FILL_PIECES_PER_SEGMENT));
+    const [x, y] = pointOnSpline(points, piece / FILL_PIECES_PER_SEGMENT);
+    corners.push([x * scale, y * scale]);
   }
 
   // only the rows the curve reaches, and never outside the grid
   const yValues = corners.map(([, y]) => y);
   const topRow = Math.max(0, Math.floor(Math.min(...yValues)));
-  const bottomRow = Math.min(gridSize - 1, Math.ceil(Math.max(...yValues)));
+  const bottomRow = Math.min(size - 1, Math.ceil(Math.max(...yValues)));
   const crossingsPerRow = Array.from({ length: bottomRow - topRow + 1 }, () => []);
 
   // every piece, from each corner to the next; the last one closes the loop
@@ -1104,9 +1267,9 @@ function fillInside(points, segments) {
     // the crossings come in pairs: in at the first, out at the second
     for (let pair = 0; pair + 1 < crossings.length; pair += 2) {
       const startColumn = Math.max(0, Math.ceil(crossings[pair] - 0.5));
-      const endColumn = Math.min(gridSize - 1, Math.floor(crossings[pair + 1] - 0.5));
+      const endColumn = Math.min(size - 1, Math.floor(crossings[pair + 1] - 0.5));
       for (let column = startColumn; column <= endColumn; column++) {
-        if (random() < FILL_DOT_CHANCE) addInkToPixel(column, row, opacity);
+        if (random() < FILL_DOT_CHANCE) addInkToPixel(column, row, opacity, size);
       }
     }
   });
@@ -1114,37 +1277,52 @@ function fillInside(points, segments) {
 
 // A mark spreads its ink over its width, so wide marks are not darker than
 // thin ones.
+// `x`, `y` and `radius` are in grid pixels. The ink layer may have finer
+// pixels (see INK_SCALE): the mark then covers the same part of the grid,
+// with the same ink in each pixel, only its edge is finer. So the drawing
+// looks the same, just sharper.
 function addInk(x, y, radius, opacity) {
   const markWidth = Math.max(1, radius * 2);
   const markOpacity = (opacity * uiParams.textureOpacity) / markWidth;
-  const centerX = Math.floor(x);
-  const centerY = Math.floor(y);
+  const scale = inkScale();
+  const size = layerSize(ink);
 
-  // A mark less than a pixel wide only ever covers the pixel it sits on, so
-  // it skips the loop below. Hair, Chalk and Grain are made of these.
+  // A mark less than a grid pixel wide covers one grid pixel's worth of ink
+  // pixels: a small square of them, centred on the mark. Hair, Chalk and
+  // Grain are made of these.
   if (radius < 1) {
-    addInkToPixel(centerX, centerY, markOpacity);
+    const left = Math.round(x * scale - scale / 2);
+    const top = Math.round(y * scale - scale / 2);
+    for (let offsetY = 0; offsetY < scale; offsetY++) {
+      for (let offsetX = 0; offsetX < scale; offsetX++) {
+        addInkToPixel(left + offsetX, top + offsetY, markOpacity, size);
+      }
+    }
     return;
   }
 
   // Row by row, only the pixels inside the circle are visited: halfWidth is
   // how far the circle reaches left and right on that row. This is much
   // faster for wide marks like Fog than checking every pixel of the square.
-  const reach = Math.ceil(radius);
+  const centerX = Math.floor(x * scale);
+  const centerY = Math.floor(y * scale);
+  const inkRadius = radius * scale;
+  const reach = Math.ceil(inkRadius);
   for (let offsetY = -reach; offsetY <= reach; offsetY++) {
     // rows above or below the circle are skipped
-    if (Math.abs(offsetY) > radius) continue;
-    const halfWidth = Math.floor(Math.sqrt(radius * radius - offsetY * offsetY));
+    if (Math.abs(offsetY) > inkRadius) continue;
+    const halfWidth = Math.floor(Math.sqrt(inkRadius * inkRadius - offsetY * offsetY));
     for (let offsetX = -halfWidth; offsetX <= halfWidth; offsetX++) {
-      addInkToPixel(centerX + offsetX, centerY + offsetY, markOpacity);
+      addInkToPixel(centerX + offsetX, centerY + offsetY, markOpacity, size);
     }
   }
 }
 
-// Adds ink to one pixel, unless it lies outside the grid.
-function addInkToPixel(pixelX, pixelY, markOpacity) {
-  if (pixelX < 0 || pixelY < 0 || pixelX >= gridSize || pixelY >= gridSize) return;
-  const index = pixelY * gridSize + pixelX;
+// Adds ink to one ink pixel, unless it lies outside the layer, which is
+// `size` ink pixels wide.
+function addInkToPixel(pixelX, pixelY, markOpacity, size) {
+  if (pixelX < 0 || pixelY < 0 || pixelX >= size || pixelY >= size) return;
+  const index = pixelY * size + pixelX;
   ink[index] += (1 - ink[index]) * markOpacity;
 }
 
@@ -1162,18 +1340,35 @@ function addInkStroke(startX, startY, endX, endY, radius, opacity) {
 // there is no ink, so color changes in the panel apply right away.
 function drawInk() {
   const { r, g, b } = uiParams.foregroundColor;
-  inkImage.loadPixels();
-  // every pixel takes four places in the list: red, green, blue, opacity
-  const pixelValues = inkImage.pixels;
-  for (let index = 0; index < ink.length; index++) {
-    const place = index * 4;
-    pixelValues[place] = r;
-    pixelValues[place + 1] = g;
-    pixelValues[place + 2] = b;
-    pixelValues[place + 3] = ink[index] * 255;
+  // One picture per layer size, made the first time it is needed. Its
+  // pixels are read once (loadPixels), after that only written to.
+  const size = layerSize(ink);
+  if (!inkImages.has(size)) {
+    const picture = createImage(size, size);
+    picture.loadPixels();
+    inkImages.set(size, { picture, colorText: '' });
   }
-  inkImage.updatePixels();
-  image(inkImage, 0, 0);
+  const screenImage = inkImages.get(size);
+  // every pixel takes four places in the list: red, green, blue, opacity
+  const pixelValues = screenImage.picture.pixels;
+  // red, green and blue only change with the Main color, so they are only
+  // written then; the opacity follows the ink every frame
+  const colorText = svgColor(uiParams.foregroundColor);
+  if (screenImage.colorText !== colorText) {
+    screenImage.colorText = colorText;
+    for (let index = 0; index < ink.length; index++) {
+      const place = index * 4;
+      pixelValues[place] = r;
+      pixelValues[place + 1] = g;
+      pixelValues[place + 2] = b;
+    }
+  }
+  for (let index = 0; index < ink.length; index++) {
+    pixelValues[index * 4 + 3] = ink[index] * SOLID;
+  }
+  screenImage.picture.updatePixels();
+  // shown as big as the grid, whatever its number of pixels
+  image(screenImage.picture, 0, 0, gridSize, gridSize);
 }
 
 // The cell styles: the ink is counted per grid cell, and each cell gets a
@@ -1184,18 +1379,22 @@ function drawInk() {
 function inkCells() {
   const { cellWidth, cellHeight } = cellSize();
   const inkPerCell = new Float32Array(uiParams.rows * uiParams.columns);
-  for (let pixelY = 0; pixelY < gridSize; pixelY++) {
-    const row = Math.min(uiParams.rows - 1, Math.floor(pixelY / cellHeight));
-    for (let pixelX = 0; pixelX < gridSize; pixelX++) {
-      const value = ink[pixelY * gridSize + pixelX];
+  const scale = inkScale();
+  const size = layerSize(ink);
+  for (let pixelY = 0; pixelY < size; pixelY++) {
+    const row = Math.min(uiParams.rows - 1, Math.floor(pixelY / scale / cellHeight));
+    for (let pixelX = 0; pixelX < size; pixelX++) {
+      const value = ink[pixelY * size + pixelX];
       if (value === 0) continue;
-      const column = Math.min(uiParams.columns - 1, Math.floor(pixelX / cellWidth));
+      const column = Math.min(uiParams.columns - 1, Math.floor(pixelX / scale / cellWidth));
       inkPerCell[row * uiParams.columns + column] += value;
     }
   }
 
-  // a solid line straight across a cell holds about one cell width of ink
-  const fullCell = CELL_FULL_LINES * Math.min(cellWidth, cellHeight);
+  // a solid line straight across a cell holds about one cell width of ink,
+  // in grid pixels' worth: a finer layer has scale × scale ink pixels in
+  // every grid pixel, so it holds that many times as much
+  const fullCell = CELL_FULL_LINES * Math.min(cellWidth, cellHeight) * scale * scale;
   const shapes = [];
   for (let row = 0; row < uiParams.rows; row++) {
     for (let column = 0; column < uiParams.columns; column++) {
@@ -1363,47 +1562,66 @@ function anchorsSVG() {
     } else {
       parts.push(`<circle cx="${rounded(x)}" cy="${rounded(y)}" r="${guideStyle.anchorDotSize / 2}" fill="${colorText}"/>`);
     }
-    const numberX = rounded(x + guideStyle.numberOffset);
-    const numberY = rounded(y - guideStyle.numberOffset);
-    parts.push(`<text x="${numberX}" y="${numberY}" font-size="${guideStyle.numberSize}" font-family="sans-serif" fill="${colorText}">${index + 1}</text>`);
+    parts.push(`<path d="${numberOutline(index + 1, x + guideStyle.numberOffset, y - guideStyle.numberOffset)}" fill="${colorText}"/>`);
   });
   return svgFile(parts);
 }
 
-// The curve's ink is made of pixels with every shade of ink, so it is rounded to
-// SVG_INK_LEVELS shades. Each row is cut into runs of pixels with the same
-// shade; every run becomes a 1 pixel tall strip. All strips of one shade
-// share one <path>, which keeps the file small enough to open.
+// An anchor's number as the outline of its digits, for SVG files, in the
+// font the canvas writes it in. Written as text, the number would show in
+// whatever font the viewer has, because an SVG picture can't load a font.
+// p5's textToPaths() gives the font's own drawing commands: M (move), L
+// (line), Q and C (curves) and Z (close), each with its points.
+function numberOutline(number, x, y) {
+  push();
+  textSize(guideStyle.numberSize);
+  const commands = selectedFont.textToPaths(String(number), x, y);
+  pop();
+  return commands
+    .map(([type, ...numbers]) => type + numbers.map((value) => round(value, SVG_DECIMALS)).join(' '))
+    .join('');
+}
+
+// The curve's ink is made of pixels with every shade of ink. For the SVG
+// file it is traced into smooth outlines (see src/lib/trace.js), one set
+// per shade, SVG_INK_LEVELS of them: the faintest shade covers the most,
+// the darkest the least. They are laid on top of each other, each a little
+// see-through, so where they overlap the ink is as dark as on screen.
+// Outlines don't show pixels, so the file stays sharp in Illustrator.
 function inkToSVG(colorText) {
-  const stripsPerShade = Array.from({ length: SVG_INK_LEVELS }, () => []);
-  const shadeAt = (x, y) => Math.round(ink[y * gridSize + x] * SVG_INK_LEVELS);
+  // shade `level` holds everything at least that dark, rounded to the
+  // nearest shade: from halfway between it and the shade below
+  const levels = Array.from({ length: SVG_INK_LEVELS }, (unused, index) => index + 1);
+  const thresholds = levels.map((level) => (level - 0.5) / SVG_INK_LEVELS);
+  const outlinesPerLevel = traceOutlines(ink, layerSize(ink), thresholds);
 
-  for (let y = 0; y < gridSize; y++) {
-    let x = 0;
-    while (x < gridSize) {
-      const shade = shadeAt(x, y);
-      let runEnd = x + 1;
-      while (runEnd < gridSize && shadeAt(runEnd, y) === shade) runEnd++;
-      // shade 0 is no ink, so there is nothing to draw
-      if (shade > 0) stripsPerShade[shade - 1].push(`M${x} ${y}h${runEnd - x}v1h${x - runEnd}z`);
-      x = runEnd;
-    }
-  }
+  const paths = [];
+  outlinesPerLevel.forEach((outlines, index) => {
+    if (outlines.length === 0) return;
+    // the outlines are in ink pixels; the file counts in grid pixels
+    const pathData = outlinesToPathData(outlines, TRACE_DECIMALS, 1 / inkScale());
+    const opacity = layerOpacity(levels[index]).toFixed(4);
+    paths.push(`<path fill="${colorText}" fill-opacity="${opacity}" fill-rule="evenodd" d="${pathData}"/>`);
+  });
+  return paths;
+}
 
-  return stripsPerShade
-    .map((strips, index) => {
-      if (strips.length === 0) return '';
-      const opacity = ((index + 1) / SVG_INK_LEVELS).toFixed(3);
-      return `<path fill="${colorText}" fill-opacity="${opacity}" d="${strips.join('')}"/>`;
-    })
-    .filter((path) => path !== '');
+// How see-through the shade `level` must be, so that it and all the
+// fainter shades below it, laid on top of each other, give exactly
+// level / SVG_INK_LEVELS of ink. Each layer lets through (1 - opacity) of
+// what is behind it, so it only has to add what the layers below are
+// missing.
+function layerOpacity(level) {
+  const inkBelow = (level - 1) / SVG_INK_LEVELS;
+  const inkHere = level / SVG_INK_LEVELS;
+  return 1 - (1 - inkHere) / (1 - inkBelow);
 }
 
 function drawGridLines() {
   const { cellWidth, cellHeight } = cellSize();
   const { r, g, b } = guideStyle.gridLineColor;
   noFill();
-  stroke(r, g, b, guideStyle.gridLineOpacity);
+  stroke(r, g, b, guideOpacity(guideStyle.gridLineOpacity, 'showGrid'));
   strokeWeight(1);
   for (let row = 0; row < uiParams.rows; row++) {
     for (let column = 0; column < uiParams.columns; column++) {
@@ -1424,7 +1642,7 @@ function drawAnchors() {
   // It needs at least two anchors, and three before it can close into a loop.
   if (points.length >= 2) {
     noFill();
-    stroke(r, g, b, guideStyle.polygonOpacity);
+    stroke(r, g, b, guideOpacity(guideStyle.polygonOpacity, 'showAnchors'));
     strokeWeight(1);
     beginShape();
     for (const [x, y] of points) vertex(x, y);
@@ -1436,7 +1654,7 @@ function drawAnchors() {
   points.forEach(([x, y], index) => {
     drawAnchorShape(anchors[index], x, y);
     noStroke();
-    fill(r, g, b);
+    fill(r, g, b, guideOpacity(SOLID, 'showAnchors'));
     text(index + 1, x + guideStyle.numberOffset, y - guideStyle.numberOffset);
   });
 }
@@ -1448,15 +1666,15 @@ function drawAnchorShape(anchor, x, y) {
   const { r, g, b } = uiParams.accentColor;
   if (!isCellStyle()) {
     noStroke();
-    fill(r, g, b);
+    fill(r, g, b, guideOpacity(SOLID, 'showAnchors'));
     circle(x, y, guideStyle.anchorDotSize);
     return;
   }
 
   const { cellWidth, cellHeight } = cellSize();
   // a see-through fill, so overlapping shapes and the curve still show
-  fill(r, g, b, guideStyle.cellShapeOpacity);
-  stroke(r, g, b);
+  fill(r, g, b, guideOpacity(guideStyle.cellShapeOpacity, 'showAnchors'));
+  stroke(r, g, b, guideOpacity(SOLID, 'showAnchors'));
   strokeWeight(1);
   drawCellShape((anchor.column + 0.5) * cellWidth, (anchor.row + 0.5) * cellHeight, cellWidth, cellHeight);
 }
@@ -1464,20 +1682,20 @@ function drawAnchorShape(anchor, x, y) {
 // Where the grid starts. It sits in the middle of the space between the
 // library on the left and the control panel on the right. Hidden panels
 // (g key) are 0 wide, so the grid moves back to the middle of the window.
+// On the start screen it sits in the middle of the start screen's left
+// part, and glides over from there once a mode is picked.
 function gridLeft() {
   const leftSide = library ? library.element.offsetWidth : 0;
   const rightSide = panel ? panel.domElement.offsetWidth : 0;
-  return leftSide + (width - leftSide - rightSide - gridSize) / 2;
+  const mainLeft = leftSide + (width - leftSide - rightSide - gridSize) / 2;
+  return lerp(mainLeft, startGridLeft, startScreenAmount);
 }
 
-// The grid sits in the middle of the room below the project title and the
-// Iteration title. Hidden titles (g key) take no room.
+// The grid sits in the middle of the room below the title bar. It keeps
+// that room when the title bar is hidden (g key), so the grid doesn't jump
+// when the UI disappears.
 function gridTop() {
-  let titlesHeight = 0;
-  for (const title of [projectHeadline, stageTitle]) {
-    if (title && !title.hidden) titlesHeight += title.offsetHeight;
-  }
-  return titlesHeight + (height - titlesHeight - gridSize) / 2;
+  return topBarHeight + (height - topBarHeight - gridSize) / 2;
 }
 
 // How far the grid's top edge is pushed right for every pixel it sits above
@@ -1531,6 +1749,7 @@ function anchorUnderMouse() {
 window.mousePressed = function mousePressed(event) {
   // the control panel sits on top of the canvas, so clicks on it are ignored
   if (event.target.tagName !== 'CANVAS') return;
+  if (!isOnMainScreen()) return;
 
   // Multiple view: a click on an iteration saves it to the library
   if (isMultipleView()) {
@@ -1639,12 +1858,10 @@ window.addEventListener('keydown', (event) => {
     toggleAllFolders();
   } else if (event.key === 'g') {
     // src/lib/gui.js hides the control panel on g; the library, the title
-    // above the grid and the project title go with it
+    // bar and the labels around the grid go with it
     library.toggle();
-    stageTitle.hidden = !stageTitle.hidden;
-    projectHeadline.hidden = !projectHeadline.hidden;
-    // the panels and titles move up into its room, see index.html
-    document.body.classList.toggle('without-project-title', projectHeadline.hidden);
+    topBar.hidden = !topBar.hidden;
+    stageFrame.element.hidden = topBar.hidden;
   }
 });
 
@@ -1666,6 +1883,13 @@ function setPaused(paused) {
 
 function togglePause() {
   setPaused(!animationPaused);
+}
+
+// The Stop button: the drawing starts over from an empty canvas, and waits
+// there until you press Play (or Space).
+function stopDrawing() {
+  restartDrawing();
+  setPaused(true);
 }
 
 // The eye icons on the Grid and Anchors folders show what is visible right now.
@@ -1793,9 +2017,9 @@ function resetEverything() {
 // loading from the library.
 function refreshPanel() {
   panel.controllersRecursive().forEach((controller) => controller.updateDisplay());
-  // that only changes what the controls show, so the panel's accent color
+  // that only changes what the controls show, so the page's accent color
   // is set again here as well
-  colorPanelInAccent(panel, uiParams.accentColor);
+  applyAccentColor(uiParams.accentColor);
   // the switches and the Style field are this project's own, so they are told too
   for (const control of [anchorModeController, viewModeController, paintModeController, textureController]) {
     control.updateDisplay();
@@ -1803,6 +2027,7 @@ function refreshPanel() {
   updateGuideControls();
   showWidthSlider();
   showModeControls();
+  showColorTheme();
 }
 
 // The library saves and loads variations through these two functions.
@@ -1993,7 +2218,7 @@ function applySheet({ settings, iterations: savedIterations }) {
   inkLoadNumber += 1;
   iterations = savedIterations.map((saved) => {
     const iteration = {
-      ink: new Float32Array(gridSize * gridSize),
+      ink: newInkLayer(1),
       anchors: saved.anchors.map((anchor) => ({ ...anchor })),
       settings: { ...saved.settings },
       noiseSeed: saved.noiseSeed,
@@ -2008,13 +2233,13 @@ function applySheet({ settings, iterations: savedIterations }) {
   refreshPanel();
 }
 
-// An empty canvas the size of the grid, off screen, for turning the ink
+// An empty square canvas `size` pixels wide, off screen, for turning an ink
 // layer into a picture and back. Returns its drawing context; the canvas
 // itself is context.canvas.
-function gridSizedContext() {
+function squareContext(size) {
   const pictureCanvas = document.createElement('canvas');
-  pictureCanvas.width = gridSize;
-  pictureCanvas.height = gridSize;
+  pictureCanvas.width = size;
+  pictureCanvas.height = size;
   return pictureCanvas.getContext('2d');
 }
 
@@ -2022,8 +2247,9 @@ function gridSizedContext() {
 // pixel keeps its ink in its opacity: 0 for no ink, 255 for full. Without
 // `source` it is the sketch's own ink layer.
 function inkToPicture(source = ink) {
-  const context = gridSizedContext();
-  const pixelData = context.createImageData(gridSize, gridSize);
+  const size = layerSize(source);
+  const context = squareContext(size);
+  const pixelData = context.createImageData(size, size);
   // every pixel takes four places in the list: red, green, blue, opacity
   for (let index = 0; index < source.length; index++) {
     pixelData.data[index * 4 + 3] = source[index] * 255;
@@ -2043,9 +2269,12 @@ function pictureToInk(inkPicture, target = ink) {
   picture.onload = () => {
     // another variation was loaded, or the drawing restarted, in the meantime
     if (loadNumber !== inkLoadNumber) return;
-    const context = gridSizedContext();
-    context.drawImage(picture, 0, 0);
-    const pixelData = context.getImageData(0, 0, gridSize, gridSize).data;
+    // stretched to the layer's size, in case the picture was saved from a
+    // layer with fewer pixels, like an iteration loaded into Single view
+    const size = layerSize(target);
+    const context = squareContext(size);
+    context.drawImage(picture, 0, 0, size, size);
+    const pixelData = context.getImageData(0, 0, size, size).data;
     for (let index = 0; index < target.length; index++) {
       target[index] = pixelData[index * 4 + 3] / 255;
     }
@@ -2055,8 +2284,9 @@ function pictureToInk(inkPicture, target = ink) {
 
 // The picture the library shows and exports as PNG, as a data URL. It is
 // cut out of the canvas where the grid is, at the canvas's full sharpness.
-// pixelDensity() is 2 on most laptop screens: the canvas then has twice as
-// many pixels as it looks, so the picture is twice the grid's size.
+// pixelDensity() is at least INK_SCALE (see setup()): the canvas then has
+// that many times as many pixels as it looks, so the picture is that many
+// times the grid's size, as detailed as the ink.
 // A slanted grid reaches past its square on both sides, so the picture is
 // that much wider.
 function drawingPicture() {
@@ -2086,20 +2316,19 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   // index.html), and the T key leaves it alone.
   const modes = gui.addFolder('Modes');
   modes.domElement.classList.add('lil-always-open');
-  // the Tab key skips its title, so Enter can't fold it away either
-  modes.$title.tabIndex = -1;
-  anchorModeController = addSwitch(modes, uiParams, 'anchorMode', ['Glyph', 'Shape', 'Animation'], (mode) => {
-    swapAnchorCount(mode);
-    showModeControls();
-    if (mode === 'Glyph') updateFontAnchors();
-    else randomAnchors();
-  });
+  // the panel's headline above it, with the Invert switch on its right
+  const modesHeading = makeSectionTitle('Modes');
+  modesHeading.classList.add('is-first');
+  invertSwitch = createSwitchButton(invertSwitchSettings);
+  modesHeading.appendChild(invertSwitch.element);
+  modes.domElement.before(modesHeading);
+  anchorModeController = addSwitch(modes, uiParams, 'anchorMode', anchorModes, applyMode);
   // one drawing in the middle, or several iterations at once. Switching
   // starts the drawing over.
   viewModeController = addSwitch(modes, uiParams, 'viewMode', ['Single', 'Multiple'], () => {
     showModeControls();
     restartDrawing();
-  });
+  }, { secondary: true });
   // Multiple only: how many iterations per row, so 2 gives 2 × 2
   iterationsPerRowController = modes
     .add(uiParams, 'iterationsPerRow', iterationsPerRowRange.min, iterationsPerRowRange.max, iterationsPerRowRange.step)
@@ -2149,7 +2378,7 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   });
   // ink along the curve or inside it. Switching starts the drawing over, so
   // the old ink doesn't mix with the new.
-  paintModeController = addSwitch(splinesFolder, uiParams, 'paintMode', ['Line', 'Fill'], restartDrawing);
+  paintModeController = addSwitch(splinesFolder, uiParams, 'paintMode', ['Line', 'Fill'], restartDrawing, { secondary: true });
   // each slider takes its min, max and step from `splineRanges`
   const splineSlider = (settingName) => {
     const range = splineRanges[settingName];
@@ -2191,101 +2420,252 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   showModeControls();
 }
 
+// After the mode has changed: the anchor count of that mode, its controls in
+// the panel, and new anchors (from the text in 'Glyph', random in the others).
+function applyMode(mode) {
+  swapAnchorCount(mode);
+  showModeControls();
+  if (mode === 'Glyph') updateFontAnchors();
+  else randomAnchors();
+}
+
+// Switches to `mode`, as if it was picked in the panel. Nothing happens if
+// it is the mode already on show, so the drawing isn't started over.
+function switchMode(mode) {
+  if (uiParams.anchorMode === mode) return;
+  uiParams.anchorMode = mode;
+  anchorModeController.updateDisplay();
+  applyMode(mode);
+}
+
+// A click on one of the start screen's cards: its mode, and the change to
+// the main screen begins. (Pointing at a card only calls switchMode().)
+function chooseMode(mode) {
+  switchMode(mode);
+  moveStartScreen(0);
+}
+
+// A click on the project's name in the title bar: back to the start screen.
+// Nothing happens if it is already there or on its way.
+function returnHome() {
+  if (startScreen.isOpen()) return;
+  dragging = null;
+  startScreen.open(uiParams.anchorMode);
+  moveStartScreen(1);
+}
+
 // The Controls headline in the panel, below the mode switch and above the
-// Grid folder, styled like the panel's own headline. Below it, Randomize All
-// and Reset All side by side. lil-gui has no headlines of its own, so these
-// are plain page elements, added in the panel where the folders go. Their
-// look is in index.html, under "the Controls headline".
+// folders, styled like Modes. The dots on its right close every folder, or
+// open them all again (like the T key). Below it, Randomize All and Reset
+// All side by side. lil-gui has no headlines of its own, so these are plain
+// page elements, added in the panel where the folders go. Their look is in
+// index.html, under "the section headlines".
 function addControlsSection(gui) {
-  const heading = document.createElement('div');
-  heading.className = 'panel-section-title';
-  heading.textContent = 'Controls';
+  const heading = makeSectionTitle('Controls');
+  const moreButton = makeIconButton(MORE_ICON, 'Open or close all folders (T)', toggleAllFolders);
+  moreButton.classList.add('panel-more-button');
+  heading.appendChild(moreButton);
 
   const actions = document.createElement('div');
   actions.className = 'panel-section-actions';
-  const buttons = [
-    ['Randomize All', randomizeAll],
-    ['Reset All', resetEverything],
-  ];
-  for (const [label, action] of buttons) {
-    const button = document.createElement('button');
-    button.textContent = label;
-    button.addEventListener('click', () => action());
-    actions.appendChild(button);
-  }
+  actions.append(
+    makeButton('Randomize All', randomizeAll, RANDOMIZE_ICON),
+    makeButton('Reset All', resetEverything, RESTART_ICON),
+  );
   gui.$children.append(heading, actions);
 }
 
-// The Playback icons: line drawings in the text color, 14 pixels wide, like
-// the icons in the panel and the library.
-// Restart: an arrow turning back on itself.
-const RESTART_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
-// Pause: two upright bars. Shown while the drawing runs.
-const PAUSE_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-// Play: a triangle pointing right. Shown while the drawing is paused.
-const PLAY_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-
-// The Playback headline at the end of the panel, styled like Controls, with
-// Restart and Play/Pause as icons on its right. It gives back
-// showPaused(paused), which swaps the Play/Pause icon; setPaused() calls it.
-function addPlaybackSection(gui) {
+// A headline inside the panel, like Modes, Controls and Playback
+function makeSectionTitle(text) {
   const heading = document.createElement('div');
   heading.className = 'panel-section-title';
-  heading.append('Playback');
+  heading.append(text);
+  return heading;
+}
 
-  // `label` shows when the mouse rests on a button, and screen readers read it
-  const makeIconButton = (icon, label, action) => {
-    const button = document.createElement('button');
-    button.className = 'panel-icon-button';
-    button.innerHTML = icon;
-    button.title = label;
-    button.setAttribute('aria-label', label);
-    button.addEventListener('click', () => action());
-    return button;
-  };
+// The Playback section at the end of the panel: its headline, then Restart,
+// Play/Pause and Stop as square buttons, and a bar that shows how far the
+// Animation loop has come. Clicking or dragging along the bar jumps there
+// (see seekLoop()). It gives back showPaused(paused), which swaps the
+// Play/Pause icon (setPaused() calls it), and showProgress(), see below.
+function addPlaybackSection(gui) {
+  const heading = makeSectionTitle('Playback');
+
   const restartButton = makeIconButton(RESTART_ICON, 'Restart', restartDrawing);
   const pauseButton = makeIconButton(PAUSE_ICON, 'Pause', togglePause);
-  const icons = document.createElement('div');
-  icons.className = 'panel-section-icons';
-  icons.append(restartButton, pauseButton);
-  heading.appendChild(icons);
-  gui.$children.appendChild(heading);
+  const stopButton = makeIconButton(STOP_ICON, 'Stop', stopDrawing);
+
+  // the bar: a thin line with a dot that walks along it
+  const progress = document.createElement('div');
+  progress.className = 'panel-progress';
+  progress.title = 'Animation loop: drag to jump';
+  const progressDot = document.createElement('div');
+  progressDot.className = 'panel-progress-dot';
+  progress.appendChild(progressDot);
+
+  // where the mouse is along the bar, from 0 (left end) to 1 (right end)
+  const seekToMouse = (event) => {
+    const bar = progress.getBoundingClientRect();
+    seekLoop(constrain((event.clientX - bar.left) / bar.width, 0, 1));
+  };
+  // pointer capture keeps the drag going when the mouse leaves the bar,
+  // until the button is let go
+  progress.addEventListener('pointerdown', (event) => {
+    progress.setPointerCapture(event.pointerId);
+    seekToMouse(event);
+  });
+  progress.addEventListener('pointermove', (event) => {
+    if (progress.hasPointerCapture(event.pointerId)) seekToMouse(event);
+  });
+
+  const row = document.createElement('div');
+  row.className = 'panel-playback';
+  row.append(restartButton, pauseButton, stopButton, progress);
+  gui.$children.append(heading, row);
 
   // while the drawing runs, the button offers to pause it; while it is
   // paused, to play it again
   const showPaused = (paused) => {
-    const label = paused ? 'Play' : 'Pause';
-    pauseButton.innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
-    pauseButton.title = label;
-    pauseButton.setAttribute('aria-label', label);
+    setButtonIcon(pauseButton, paused ? PLAY_ICON : PAUSE_ICON, paused ? 'Play' : 'Pause');
   };
   showPaused(animationPaused);
-  return { showPaused };
+
+  // `share` runs from 0 (the loop starts) to 1 (it starts over). Only
+  // Animation mode has a loop; in the other modes the bar is faded out, the
+  // dot waits at the start and the bar can't be dragged. draw() calls this
+  // every frame, so the page is only changed when something is different.
+  const showProgress = (share, isLooping) => {
+    const place = `${(share * 100).toFixed(1)}%`;
+    if (progressDot.style.left !== place) progressDot.style.left = place;
+    progress.classList.toggle('is-idle', !isLooping);
+  };
+
+  return { showPaused, showProgress };
 }
 
-// The title bar at the top of the middle, between the library and the
-// control panel: the headline of the grid's section, in the style of the
-// Library title. Its look is in index.html, under "the title above the grid".
-function createStageTitle() {
+// The Playback bar follows the Animation loop. In Multiple view every
+// iteration runs its own loop at its own speed; the bar follows the first.
+function updatePlaybackProgress() {
+  if (!playbackControls) return;
+  const isLooping = uiParams.anchorMode === 'Animation';
+  const step = isMultipleView() ? (iterations[0]?.loopStep ?? 0) : loopStep;
+  playbackControls.showProgress(isLooping ? step / uiParams.loopLength : 0, isLooping);
+}
+
+// The Invert switch, as the panel and the start screen both have it.
+const invertSwitchSettings = {
+  label: 'Invert',
+  title: 'Invert all colors',
+  isOn: () => uiParams.invertColors,
+  onClick: () => invertColors(),
+};
+
+// The start screen's Anchors switch: shows or hides the anchors there, see
+// startGuides.
+const startAnchorsSwitchSettings = {
+  label: 'Anchors',
+  isOn: () => startGuides.showAnchors,
+  onClick: () => {
+    startGuides.showAnchors = !startGuides.showAnchors;
+    startScreen.updateSwitches();
+  },
+};
+
+// Turns every color around: light becomes dark and dark becomes light. Main
+// and Background are inverted for real, so the color pickers, the saved
+// variations and the exports change with them. The page around the drawing
+// gets its inverted colors from index.html (see showColorTheme()). The
+// accent keeps its color, so the guides stay recognisable.
+function invertColors() {
+  uiParams.invertColors = !uiParams.invertColors;
+  uiParams.foregroundColor = invertedColor(uiParams.foregroundColor);
+  uiParams.backgroundColor = invertedColor(uiParams.backgroundColor);
+  refreshPanel();
+}
+
+function invertedColor({ r, g, b }) {
+  return { r: MAX_CHANNEL - r, g: MAX_CHANNEL - g, b: MAX_CHANNEL - b };
+}
+
+// The panels, the library and the title bar follow the Invert switch: the
+// class is-inverted on the page swaps their colors (see index.html).
+function showColorTheme() {
+  document.body.classList.toggle('is-inverted', uiParams.invertColors);
+  if (invertSwitch) invertSwitch.updateDisplay();
+  if (startScreen) startScreen.updateSwitches();
+}
+
+// The title bar across the top of the window: the project's mark and name
+// on the left (a click on them goes back to the start screen), the title
+// of the middle section in the middle, and the subtitle on the right. The texts are projectTitle and projectSubtitle in
+// src/config.js; the look is in index.html, under "the title bar".
+function createTopBar() {
+  const bar = document.createElement('header');
+  bar.className = 'top-bar';
+
+  // a button: clicking the name goes back to the start screen
+  const brand = document.createElement('button');
+  brand.className = 'top-bar-brand';
+  brand.title = 'Back to the start';
+  brand.innerHTML = dotGridIcon();
+  brand.append(projectTitle);
+  brand.addEventListener('click', returnHome);
+
   const title = document.createElement('div');
-  title.className = 'stage-title';
+  title.className = 'top-bar-title';
   title.textContent = 'Iteration';
-  document.body.appendChild(title);
-  return title;
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'top-bar-subtitle';
+  subtitle.textContent = projectSubtitle;
+
+  bar.append(brand, title, subtitle);
+  document.body.appendChild(bar);
+  return bar;
 }
 
-// The project's name as a big headline across the whole window, above the
-// three section titles. Its text is projectTitle from src/config.js; its
-// look is in index.html, under "the project title".
-function createProjectTitle() {
-  const title = document.createElement('div');
-  title.className = 'project-title';
-  title.textContent = projectTitle;
-  document.body.appendChild(title);
-  return title;
+// Small labels around the grid, like on a drawing board: what is shown and
+// how big it is above the grid, the grid and the anchors below it, and a
+// + mark beyond each corner. It lies exactly over the grid and lets every
+// click through. updateStageFrame() keeps it in place. Its look and size
+// are in index.html, under "the labels around the grid".
+function createStageFrame() {
+  const frame = document.createElement('div');
+  frame.className = 'stage-frame';
+
+  const labels = {};
+  for (const corner of ['top-left', 'top-right', 'bottom-left', 'bottom-right']) {
+    const label = document.createElement('span');
+    label.className = `stage-label is-${corner}`;
+    const mark = document.createElement('span');
+    mark.className = `stage-mark is-${corner}`;
+    frame.append(label, mark);
+    labels[corner] = label;
+  }
+  labels['top-right'].textContent = `${gridSize} × ${gridSize}`;
+
+  document.body.appendChild(frame);
+  return { element: frame, labels };
+}
+
+// Moves the labels to where the grid is and writes what they say. draw()
+// calls this every frame, so the page is only changed when something is
+// different.
+function updateStageFrame() {
+  const { element, labels } = stageFrame;
+  if (element.hidden) return;
+
+  const place = `translate(${gridLeft()}px, ${gridTop()}px)`;
+  if (element.style.transform !== place) element.style.transform = place;
+
+  const perRow = uiParams.iterationsPerRow;
+  showText(labels['top-left'], isMultipleView() ? `Iterations ${perRow} × ${perRow}` : 'Iteration canvas');
+  showText(labels['bottom-left'], `Grid ${uiParams.columns} × ${uiParams.rows}`);
+  showText(labels['bottom-right'], `${anchors.length} anchors${animationPaused ? ' · paused' : ''}`);
+}
+
+function showText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
 }
 
 // The panels size themselves around the grid (see --panel-width in
@@ -2295,11 +2675,14 @@ document.documentElement.style.setProperty('--grid-size', `${gridSize}px`);
 // Builds the control panel and the library, then starts p5. p5 looks for
 // the setup() and draw() you defined above and runs them.
 library = createLibrary({ capture: captureVariation, apply: applyVariation });
-stageTitle = createStageTitle();
-projectHeadline = createProjectTitle();
+topBar = createTopBar();
+topBarHeight = topBar.offsetHeight;
+stageFrame = createStageFrame();
 panel = createGUI({
   params: uiParams,
-  // the headline at the top of the panel, above the mode switch
+  // lil-gui's own title. It is hidden (see index.html): a click on it would
+  // fold the whole panel away. The panel's headlines are made in
+  // addControls() instead.
   title: 'Modes',
   // no export buttons in the panel: the s key saves to the library, and
   // the library exports saved variations as PNG or SVG
@@ -2310,7 +2693,14 @@ panel = createGUI({
   onHelpersToggle: updateGuideControls,
   addControls,
 });
-// the Controls title is only a headline (see index.html), so the Tab key
-// skips it and Enter can't fold the panel away
-panel.$title.tabIndex = -1;
+startScreen = createStartScreen({
+  modes: anchorModes,
+  startingMode: uiParams.anchorMode,
+  onPreview: switchMode,
+  onChoose: chooseMode,
+  switches: [
+    invertSwitchSettings,
+    startAnchorsSwitchSettings,
+  ],
+});
 new p5();

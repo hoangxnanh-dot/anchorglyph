@@ -118,6 +118,8 @@ Open **`src/config.js`**. It holds what the sketch starts with:
   dropdown every time you reload. Write it exactly as it appears in the
   dropdown, which is the filename without `.otf` or `.ttf`.
 - `startingText` is the words it opens with.
+- `projectTitle` and `projectSubtitle` are the name and the short line in the
+  title bar across the top, and at the bottom of the library.
 - `backgroundColor`, `foregroundColor` and `accentColor` are the starting
   colors. The accent is the color of the guides: the lines between anchors,
   the anchor points and their numbers.

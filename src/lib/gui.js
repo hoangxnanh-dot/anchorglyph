@@ -26,9 +26,10 @@
 
 import GUI from 'lil-gui';
 import { fontOptions } from './font/fonts.js';
-import { startingFont } from '../config.js';
 import { savePNG } from './export.js';
 import { Easings } from './easings.js';
+import { EYE_OPEN_ICON, EYE_CLOSED_ICON, RANDOMIZE_ICON } from './icons.js';
+import { projectTitle, projectSubtitle } from '../config.js';
 
 // How long a slider takes to glide back to its starting value after a
 // double-click on its name or its handle, in milliseconds.
@@ -37,6 +38,10 @@ const RESET_DURATION = 400;
 // the handle, in pixels on either side. The handle itself is only 2 pixels
 // wide, too thin to hit exactly.
 const HANDLE_REACH = 6;
+// The range of the Size slider for the text, in pixels. Below 150 a letter
+// shrinks into a few grid cells and stops reading as a letter; at 900 a
+// single letter fills the grid (longer words fill it much earlier).
+const TEXT_SIZE_RANGE = { min: 150, max: 900, step: 1 };
 
 // `onFontChange` runs when someone picks a font from the dropdown. A shared
 // control only appears when `params` has its value, so a template without
@@ -60,7 +65,7 @@ export function createGUI({
     const controllers = [];
     if ('text' in params) controllers.push(container.add(params, 'text').name('Type here').onChange(onTextChange));
     if ('font' in params) controllers.push(container.add(params, 'font', fontOptions).onChange(onFontChange));
-    if ('textSize' in params) controllers.push(container.add(params, 'textSize', 100, 500, 1).name('Size').onChange(onTextSizeChange));
+    if ('textSize' in params) controllers.push(container.add(params, 'textSize', TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max, TEXT_SIZE_RANGE.step).name('Size').onChange(onTextSizeChange));
     return controllers;
   };
 
@@ -75,8 +80,8 @@ export function createGUI({
     return textControllers;
   };
 
-  const applyAccentToPanel = () => {
-    if ('accentColor' in params) colorPanelInAccent(gui, params.accentColor);
+  const applyAccent = () => {
+    if ('accentColor' in params) applyAccentColor(params.accentColor);
   };
 
   // the color pickers, added to `container`: the panel itself or a folder.
@@ -84,7 +89,7 @@ export function createGUI({
   const addColorControls = (container) => {
     const controllers = [];
     if ('foregroundColor' in params) controllers.push(container.addColor(params, 'foregroundColor', 255).name('Main'));
-    if ('accentColor' in params) controllers.push(container.addColor(params, 'accentColor', 255).name('Accent').onChange(applyAccentToPanel));
+    if ('accentColor' in params) controllers.push(container.addColor(params, 'accentColor', 255).name('Accent').onChange(applyAccent));
     if ('backgroundColor' in params) controllers.push(container.addColor(params, 'backgroundColor', 255).name('Background'));
     return controllers;
   };
@@ -137,18 +142,7 @@ export function createGUI({
     }
   });
 
-  applyAccentToPanel();
-
-  // the panel is written in the starting font from src/config.js. The browser
-  // loads the font file first, so the panel switches over a moment later.
-  const panelFontUrl = fontOptions[startingFont];
-  if (panelFontUrl) {
-    const panelFont = new FontFace('panel-font', `url(${panelFontUrl})`);
-    panelFont.load().then(() => {
-      document.fonts.add(panelFont);
-      setPanelStyle(gui, '--font-family', 'panel-font, sans-serif');
-    });
-  }
+  applyAccent();
 
   // hiding the panel leaves a clean canvas to screenshot or record
   let visible = true;
@@ -206,23 +200,13 @@ function glideToStart(controller) {
   requestAnimationFrame(glide);
 }
 
-// lil-gui reads its colors and font from CSS variables, and every folder
-// sets its own, so a change has to be told to the panel and each folder.
-function setPanelStyle(gui, variable, value) {
-  for (const part of [gui, ...gui.foldersRecursive()]) {
-    part.domElement.style.setProperty(variable, value);
-  }
-}
-
-// The accent color also colors the panel itself: slider knobs, numbers,
-// typed text and the chosen part of a switch. The Accent picker calls this
-// on every change; call it yourself after changing the accent in code.
-export function colorPanelInAccent(gui, { r, g, b }) {
-  const colorText = `rgb(${r}, ${g}, ${b})`;
-  setPanelStyle(gui, '--number-color', colorText);
-  setPanelStyle(gui, '--string-color', colorText);
-  // also for the rest of the page, like the library on the left
-  document.documentElement.style.setProperty('--accent-color', colorText);
+// The accent color also colors parts of the page: the selected cards in the
+// library and the switched-on Grid and Anchors buttons of its preview. The
+// panel itself stays black and grey, so it never fights with the drawing.
+// The Accent picker calls this on every change; call it yourself after
+// changing the accent in code.
+export function applyAccentColor({ r, g, b }) {
+  document.documentElement.style.setProperty('--accent-color', `rgb(${r}, ${g}, ${b})`);
 }
 
 // A button split into parts, one per option, like [ Shape | Glyph ]. The part
@@ -231,14 +215,19 @@ export function colorPanelInAccent(gui, { r, g, b }) {
 //
 //   addSwitch(folder, uiParams, 'anchorMode', ['Shape', 'Glyph'], (mode) => { ... });
 //
-// Call updateDisplay() on what it returns after changing params[property] in code.
-export function addSwitch(folder, params, property, options, onChange = () => {}) {
+// The chosen part is black. A `secondary` switch is smaller and its chosen
+// part only a darker grey, so the main switch above it stands out:
+//
+//   addSwitch(folder, uiParams, 'viewMode', ['Single', 'Multiple'], restart, { secondary: true });
+//
+// Its look is in index.html, under "the switches". Call updateDisplay() on
+// what it returns after changing params[property] in code.
+export function addSwitch(folder, params, property, options, onChange = () => {}, { secondary = false } = {}) {
   const row = document.createElement('div');
-  row.classList.add('lil-controller');
+  row.classList.add('lil-controller', 'lil-switch');
+  if (secondary) row.classList.add('is-secondary');
   const widget = document.createElement('div');
   widget.classList.add('lil-widget');
-  // a small gap so the parts read as separate halves
-  widget.style.gap = 'var(--spacing)';
   row.appendChild(widget);
 
   const buttons = options.map((option) => {
@@ -254,12 +243,10 @@ export function addSwitch(folder, params, property, options, onChange = () => {}
     return button;
   });
 
-  // the chosen part lights up in the panel's accent color, with dark text
+  // the chosen part gets the class is-chosen, which index.html colors
   function updateDisplay() {
     buttons.forEach((button, index) => {
-      const chosen = params[property] === options[index];
-      button.style.background = chosen ? 'var(--number-color)' : '';
-      button.style.color = chosen ? 'var(--background-color)' : '';
+      button.classList.toggle('is-chosen', params[property] === options[index]);
     });
   }
 
@@ -338,35 +325,94 @@ export function addCycler(folder, params, property, options, { name, onChange = 
   return { updateDisplay };
 }
 
+// The buttons around the panel, in the library and in its preview, all made
+// the same way so they look the same: light grey with rounded corners (see
+// "the buttons" in index.html).
+//
+//   makeButton('Save Iteration', saveCurrent, SAVE_ICON);   a word, an icon in front
+//   makeIconButton(CLOSE_ICON, 'Close', closePreview);      only an icon
+//
+// `onClick` is called without anything passed to it.
+export function makeButton(label, onClick, icon = '') {
+  const button = document.createElement('button');
+  button.className = 'ui-button';
+  button.innerHTML = icon;
+  button.append(label);
+  button.addEventListener('click', () => onClick());
+  return button;
+}
+
+// A button with only an icon. `label` shows when the mouse rests on it, and
+// screen readers read it out.
+export function makeIconButton(icon, label, onClick) {
+  const button = makeButton('', onClick);
+  setButtonIcon(button, icon, label);
+  return button;
+}
+
+// Gives an icon button a new icon and label, like Play turning into Pause.
+export function setButtonIcon(button, icon, label) {
+  button.innerHTML = icon;
+  button.title = label;
+  button.setAttribute('aria-label', label);
+}
+
+// The project's name with its subtitle below it, from src/config.js, as at
+// the bottom of the library and of the start screen. `className` places it.
+export function createProjectName(className) {
+  const block = document.createElement('div');
+  block.className = className;
+  const name = document.createElement('div');
+  name.textContent = projectTitle;
+  const subtitle = document.createElement('div');
+  subtitle.className = 'project-subtitle';
+  subtitle.textContent = projectSubtitle;
+  block.append(name, subtitle);
+  return block;
+}
+
+// A name with a small on/off switch next to it, like Invert:
+//
+//   const invert = createSwitchButton({ label: 'Invert', isOn: () => uiParams.invertColors, onClick: invertColors });
+//   somewhere.appendChild(invert.element);
+//
+// `isOn()` says whether it is on right now; `onClick` runs when it is
+// clicked, and should change what isOn() reads. Call updateDisplay() on what
+// it gives back after that changed, to move the knob. `title` shows when the
+// mouse rests on it. The look is in index.html, under "the switches".
+export function createSwitchButton({ label, title = label, isOn, onClick }) {
+  const button = document.createElement('button');
+  button.className = 'switch-button';
+  // screen readers announce it as a switch that is on or off
+  button.setAttribute('role', 'switch');
+  button.title = title;
+  const name = document.createElement('span');
+  name.textContent = label;
+  const track = document.createElement('span');
+  track.className = 'switch-track';
+  button.append(name, track);
+  button.addEventListener('click', onClick);
+
+  const updateDisplay = () => button.setAttribute('aria-checked', String(isOn()));
+  updateDisplay();
+  return { element: button, updateDisplay };
+}
+
 // Small icons on the right of a folder's title, that work without opening
 // the folder:
 //
 //   addEyeToggle(grid, uiParams, 'showGrid');        hides or shows something
 //   addRandomizeIcon(spline, randomizeSpline);       runs a function, like a button
 //
-// They are line drawings in the panel's text color, 14 pixels wide.
-const EYE_OPEN = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const EYE_CLOSED = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="21" x2="21" y2="3"/></svg>`;
-// two crossing arrows, the "shuffle" sign of music players
-const RANDOMIZE_ARROWS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
-  <polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>`;
+// They are line drawings from src/lib/icons.js, in the panel's text color.
 
 // Adds one clickable icon to the row of icons on the right of the title.
+// The row's look is in index.html, under "the folder icons".
 function addTitleIcon(folder, onClick) {
   // the row is made once per folder, so several icons sit side by side
   if (!folder.$titleIcons) {
     const row = document.createElement('span');
-    row.style.position = 'absolute';
-    row.style.right = 'var(--padding)';
-    row.style.top = '50%';
-    row.style.transform = 'translateY(-50%)';
-    row.style.display = 'flex';
-    row.style.gap = 'var(--spacing)';
-    // the row is placed relative to the title, on its right edge
-    folder.$title.style.position = 'relative';
+    row.className = 'lil-title-icons';
     folder.$title.appendChild(row);
     folder.$titleIcons = row;
   }
@@ -374,9 +420,8 @@ function addTitleIcon(folder, onClick) {
   // the folder title is a <button>, and a button can't hold another button,
   // so the icon is a <span> that acts like one
   const icon = document.createElement('span');
+  icon.className = 'lil-title-icon';
   icon.setAttribute('role', 'button');
-  icon.style.display = 'flex';
-  icon.style.cursor = 'pointer';
   icon.addEventListener('click', (event) => {
     // without this, the click would also open or close the folder
     event.stopPropagation();
@@ -397,7 +442,7 @@ export function addEyeToggle(folder, params, property, onChange = () => {}) {
 
   // an open eye while it shows, a crossed-out, faded eye while it is hidden
   function updateDisplay() {
-    icon.innerHTML = params[property] ? EYE_OPEN : EYE_CLOSED;
+    icon.innerHTML = params[property] ? EYE_OPEN_ICON : EYE_CLOSED_ICON;
     icon.style.opacity = params[property] ? '1' : '0.4';
     icon.title = params[property] ? 'Hide' : 'Show';
   }
@@ -411,7 +456,7 @@ export function addEyeToggle(folder, params, property, onChange = () => {}) {
 // hide or show it.
 export function addRandomizeIcon(folder, randomize) {
   const icon = addTitleIcon(folder, randomize);
-  icon.innerHTML = RANDOMIZE_ARROWS;
+  icon.innerHTML = RANDOMIZE_ICON;
   icon.title = 'Randomize';
 
   function show(visible = true) {

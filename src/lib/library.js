@@ -7,13 +7,13 @@
 //   Save Iteration   adds what is on screen now to the top of the list: the
 //   (or the s key)   drawing itself, the anchors and every setting
 //   click a picture  opens a large preview. Escape, the x or a click beside
-//                    the picture closes it again. On its bottom right corner:
+//                    the preview closes it again. Below the picture:
 //                    Grid and Anchors show or hide the guides on the
 //                    picture, PNG and SVG export it as you see it there.
 //   Load (arrow to the right, bottom right of the picture)
 //                    brings the variation back exactly as it was saved,
 //                    paused. Space continues drawing from there.
-//   Delete (x icon, top right of the picture)
+//   Delete (x icon, right of the name)
 //                    removes it right away, without asking first
 //   the name         click it to type a new one
 //   the checkbox     selects a variation. Shift-click a second checkbox to
@@ -42,8 +42,10 @@
 //
 // The look of the panel is in index.html, under "the library".
 
-import { screenshotName, variationName, variationDigits } from '../config.js';
+import { screenshotName, variationName, variationDigits, gridSize } from '../config.js';
 import { saveToDownloads, timestamp } from './export.js';
+import { makeButton, makeIconButton, createProjectName } from './gui.js';
+import { ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, ANCHOR_ICON, dotGridIcon } from './icons.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
 // camera, and the new card slides down into the list from above while the
@@ -58,14 +60,10 @@ const SLIDE_DURATION = 700;
 // down gently until it lands ("ease out quint", see https://easings.net).
 const SLIDE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
-// The icons on each card: line drawings in the text color, 14 pixels wide,
-// like the icons in the control panel's folder titles.
-// Load: an arrow to the right.
-const LOAD_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
-// Delete, and Close on the large preview: an x.
-const X_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+// How many dots across and down the project's mark at the bottom of the
+// library has, and how wide it is in pixels.
+const FOOTER_MARK_DOTS = 3;
+const FOOTER_MARK_SIZE = 40;
 
 export function createLibrary({ capture, apply }) {
   // Earlier versions kept the library in the browser's storage. That space
@@ -92,10 +90,8 @@ export function createLibrary({ capture, apply }) {
   title.className = 'library-title';
   title.textContent = 'Library';
 
-  const saveButton = document.createElement('button');
-  saveButton.className = 'library-save';
-  saveButton.textContent = 'Save Iteration';
-  saveButton.addEventListener('click', () => saveCurrent());
+  const saveButton = makeButton('Save Iteration', saveCurrent, SAVE_ICON);
+  saveButton.classList.add('library-save');
 
   // these two only do something when there is at least one variation
   const selectAllButton = makeButton('Select all', selectEverything);
@@ -112,15 +108,31 @@ export function createLibrary({ capture, apply }) {
   selectedActions.className = 'library-selection-actions';
   selectedActions.append(deleteSelectedButton, exportPNGButton, exportSVGButton);
 
-  const emptyMessage = document.createElement('p');
+  // a thin line between the buttons and the saved variations
+  const divider = document.createElement('hr');
+  divider.className = 'library-divider';
+
+  // shows while nothing is saved: a short line, and a hint below it
+  const emptyMessage = document.createElement('div');
   emptyMessage.className = 'library-empty';
-  // \n starts a new line (the message keeps line breaks, see index.html)
-  emptyMessage.textContent = 'Nothing saved yet.\n\n»Save Iteration« keeps the drawing for this visit only.';
+  const emptyTitle = document.createElement('p');
+  emptyTitle.className = 'library-empty-title';
+  emptyTitle.textContent = 'Nothing saved yet.';
+  const emptyHint = document.createElement('p');
+  emptyHint.className = 'library-empty-hint';
+  emptyHint.textContent = '»Save Iteration« keeps the drawing for this visit only.';
+  emptyMessage.append(emptyTitle, emptyHint);
 
   const list = document.createElement('ul');
   list.className = 'library-list';
 
-  panel.append(title, saveButton, selectionActions, selectedActions, emptyMessage, list);
+  // the project's mark, name and subtitle at the bottom of the library
+  const footer = document.createElement('div');
+  footer.className = 'library-footer';
+  footer.innerHTML = dotGridIcon(FOOTER_MARK_DOTS, FOOTER_MARK_SIZE);
+  footer.appendChild(createProjectName('library-project-name'));
+
+  panel.append(title, saveButton, selectionActions, selectedActions, divider, emptyMessage, list, footer);
   document.body.appendChild(panel);
 
   // the white layer for the flash. It covers the drawing but sits below the
@@ -145,7 +157,18 @@ export function createLibrary({ capture, apply }) {
   const previewName = document.createElement('div');
   previewName.className = 'library-preview-name';
 
-  const closePreviewButton = makeIconButton(X_ICON, 'Close', closePreview);
+  const closePreviewButton = makeIconButton(CLOSE_ICON, 'Close', closePreview);
+
+  // a thin frame around the picture, with a label above it on each side:
+  // the variation's mode on the left, the drawing's size on the right
+  const previewFrame = document.createElement('div');
+  previewFrame.className = 'library-preview-frame';
+  const previewLabels = document.createElement('div');
+  previewLabels.className = 'library-preview-labels';
+  const previewModeLabel = document.createElement('span');
+  const previewSizeLabel = document.createElement('span');
+  previewSizeLabel.textContent = `${gridSize} × ${gridSize}`;
+  previewLabels.append(previewModeLabel, previewSizeLabel);
 
   // the picture, with the grid and the anchors as see-through layers on top
   const previewStage = document.createElement('div');
@@ -158,26 +181,30 @@ export function createLibrary({ capture, apply }) {
   anchorsLayer.className = 'library-preview-layer';
   previewStage.append(previewImage, gridLayer, anchorsLayer);
 
-  // the buttons on the picture's bottom right corner: the two guides, then
-  // the exports
-  const gridToggle = makeButton('Grid', () => toggleLayer('showGrid'));
-  const anchorsToggle = makeButton('Anchors', () => toggleLayer('showAnchors'));
+  // the buttons below the picture: the two guides on the left, the exports
+  // on the right
+  const gridToggle = makeButton('Grid', () => toggleLayer('showGrid'), dotGridIcon());
+  const anchorsToggle = makeButton('Anchors', () => toggleLayer('showAnchors'), ANCHOR_ICON);
+  const guideButtons = document.createElement('div');
+  guideButtons.className = 'library-preview-buttons';
+  guideButtons.append(gridToggle, anchorsToggle);
+  const exportButtons = document.createElement('div');
+  exportButtons.className = 'library-preview-buttons';
+  exportButtons.append(
+    makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
+    makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
+  );
   const previewFooter = document.createElement('div');
   previewFooter.className = 'library-preview-footer';
-  previewFooter.append(
-    gridToggle,
-    anchorsToggle,
-    makeButton('PNG', () => exportPreview('png')),
-    makeButton('SVG', () => exportPreview('svg')),
-  );
+  previewFooter.append(guideButtons, exportButtons);
 
   // the variation in the preview, and which guides show on it
   let previewVariation = null;
   const previewLayers = { showGrid: false, showAnchors: false };
 
-  previewStage.append(previewFooter);
+  previewFrame.append(previewLabels, previewStage);
   previewHeader.append(previewName, closePreviewButton);
-  previewContent.append(previewHeader, previewStage);
+  previewContent.append(previewHeader, previewFrame, previewFooter);
   preview.append(previewContent);
   document.body.appendChild(preview);
 
@@ -307,6 +334,9 @@ export function createLibrary({ capture, apply }) {
     previewName.textContent = variation.name;
     previewImage.src = variation.picture;
     previewImage.alt = variation.name;
+    // like "Glyph canvas", or "Glyph sheet" for a whole sheet of iterations
+    const { anchorMode, viewMode } = variation.data.settings;
+    previewModeLabel.textContent = `${anchorMode} ${viewMode === 'Multiple' ? 'sheet' : 'canvas'}`;
 
     // the guides start the way they were showing when it was saved.
     // Variations without guides get no Grid and Anchors buttons.
@@ -490,7 +520,7 @@ export function createLibrary({ capture, apply }) {
     item.dataset.id = variation.id;
     if (variation.id === activeId) item.classList.add('is-active');
 
-    // the picture, with the checkbox, Delete and Load in its corners
+    // the picture, with the checkbox and Load in its corners
     const thumbnail = document.createElement('div');
     thumbnail.className = 'library-thumbnail';
 
@@ -510,12 +540,10 @@ export function createLibrary({ capture, apply }) {
     checkbox.title = 'Select';
     checkbox.addEventListener('click', (event) => clickCheckbox(variation, checkbox, event));
 
-    const deleteButton = makeIconButton(X_ICON, 'Delete', () => deleteVariation(variation));
-    deleteButton.classList.add('library-delete');
-    const loadButton = makeIconButton(LOAD_ICON, 'Load', () => loadVariation(variation));
+    const loadButton = makeIconButton(ARROW_ICON, 'Load', () => loadVariation(variation));
     loadButton.classList.add('library-load');
 
-    thumbnail.append(picture, selectionMask, checkbox, deleteButton, loadButton);
+    thumbnail.append(picture, selectionMask, checkbox, loadButton);
 
     // a text field, so renaming is just clicking and typing
     const name = document.createElement('input');
@@ -529,27 +557,14 @@ export function createLibrary({ capture, apply }) {
       if (event.key === 'Enter') name.blur();
     });
 
-    // the name above the picture
-    item.append(name, thumbnail);
+    // the name and Delete above the picture
+    const deleteButton = makeIconButton(CLOSE_ICON, 'Delete', () => deleteVariation(variation));
+    const header = document.createElement('div');
+    header.className = 'library-item-header';
+    header.append(name, deleteButton);
+
+    item.append(header, thumbnail);
     return item;
-  }
-
-  // A small square button with an icon instead of a word. `label` shows when
-  // the mouse rests on it, and screen readers read it out.
-  function makeIconButton(icon, label, onClick) {
-    const button = makeButton('', onClick);
-    button.classList.add('library-icon-button');
-    button.innerHTML = icon;
-    button.title = label;
-    button.setAttribute('aria-label', label);
-    return button;
-  }
-
-  function makeButton(label, onClick) {
-    const button = document.createElement('button');
-    button.textContent = label;
-    button.addEventListener('click', onClick);
-    return button;
   }
 
   // hiding the library, like the control panel, leaves a clean screen

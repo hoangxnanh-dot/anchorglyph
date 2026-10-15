@@ -2,9 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/img/favicon.png" />
+    <link rel="icon" type="image/png" href="/img/favicon2.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ANCYPH</title>
+    <title>Anchorglyph</title>
     <style>
       *,
       *::before,
@@ -13,411 +13,925 @@
         margin: 0;
         padding: 0;
       }
+      /* Anything hidden stays hidden, even where a rule below gives it a
+         display of its own (buttons, labels, the title bar). */
+      [hidden] {
+        display: none !important;
+      }
       html,
       body {
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #000;
+        background: var(--page-color);
+        /* anything without a font of its own */
+        font-family: var(--text-font);
       }
       canvas {
         display: block;
       }
 
-      /* How wide the library (left) and the control panel (right) are. They
-         share the room the grid leaves in the window, minus a gap on each
-         side of the grid, so they grow and shrink with the window. They never
-         get narrower than the smallest width or wider than the largest.
+      /* Every text on the page is Space Grotesk, straight from the fonts
+         folder: Regular for text and labels, Bold for headlines. */
+      @font-face {
+        font-family: 'SpaceGrotesk-Regular.otf';
+        src: url('/fonts/SpaceGrotesk-Regular.otf');
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: 'SpaceGrotesk-Bold.otf';
+        src: url('/fonts/SpaceGrotesk-Bold.otf');
+        font-weight: 700;
+      }
+
+      /* THE COLORS AND FONTS of the page around the drawing: a light paper
+         look with thin grey lines, light grey buttons and black for what
+         matters most. The drawing's own colors are in src/config.js and
+         the Colors folder; the accent color is set from there too. */
+      :root {
+        /* the panels and the title bar */
+        --page-color: rgb(246 246 244);
+        /* the cards in the library */
+        --card-color: rgb(255 255 255);
+        /* the thin lines between sections, and around cards and frames */
+        --line-color: rgb(226 226 222);
+        /* text and the black buttons */
+        --ink-color: rgb(24 24 24);
+        /* the names in front of the controls, and the icons */
+        --label-color: rgb(72 72 70);
+        /* quiet text: hints and the small labels */
+        --muted-color: rgb(138 138 134);
+        /* the grey buttons, lighter to darker: resting, under the mouse,
+           pressed or chosen */
+        --button-color: rgb(234 234 231);
+        --button-hover-color: rgb(224 224 220);
+        --button-pressed-color: rgb(212 212 208);
+        /* the black buttons: Save Iteration and the chosen mode */
+        --primary-color: rgb(24 24 24);
+        --primary-hover-color: rgb(56 56 54);
+        --primary-text-color: rgb(250 250 248);
+        /* the track of the Playback bar */
+        --track-color: rgb(212 212 208);
+        /* until the sketch sets it from src/config.js */
+        --accent-color: rgb(20 196 40);
+        /* the Load button on the pictures, and the veil behind the large
+           preview: see-through versions of the card and the page */
+        --load-button-color: rgb(255 255 255 / 0.92);
+        --backdrop-color: rgb(236 236 232 / 0.72);
+
+        --heading-font: 'SpaceGrotesk-Bold.otf', sans-serif;
+        --text-font: 'SpaceGrotesk-Regular.otf', sans-serif;
+        /* the small labels in capitals, like on a technical drawing. The
+           same font as the text for now; set another one here to change
+           only the labels. */
+        --label-font: var(--text-font);
+      }
+
+      /* THE SIZES. The library (left) and the control panel (right) share
+         the room the grid leaves in the window, minus a gap on each side of
+         the grid, so they grow and shrink with the window. They never get
+         narrower than the smallest width or wider than the largest.
          --grid-size is set by src/sketch.js from gridSize in src/config.js. */
       :root {
         --panel-gap: 24px;
-        --panel-min-width: 220px;
+        --panel-min-width: 260px;
         --panel-max-width: 400px;
         --panel-width: clamp(
           var(--panel-min-width),
           calc((100vw - var(--grid-size, 800px)) / 2 - var(--panel-gap)),
           var(--panel-max-width)
         );
-        /* the room between the panels' left and right edges and what is in
-           them: titles, controls, buttons and cards */
-        --panel-padding: 32px;
-        /* the room below the controls at the end of each folder */
-        --group-padding: 16px;
-        /* the room between a folder's title and its first control */
-        --group-title-gap: 0px;
-        /* the room between the line above a folder and its title */
-        --title-line-gap: 4px;
-        /* the gap between a panel's title (Controls, Library) and what
-           comes first below it */
-        --title-gap: 8px;
-        /* the room the folder arrows (▾ ▸) take in front of their titles,
+        /* the room between the panels' edges and what is in them */
+        --panel-padding: 28px;
+        /* the room the folder arrows take in front of their titles,
            including the space between arrow and text */
         --arrow-width: 24px;
-        /* how tall the project title across the top of the window is. The
-           library, the control panel and the title above the grid start
-           below it. */
-        --project-title-height: 72px;
+        /* how tall the title bar across the top of the window is. Both
+           panels start below it. */
+        --top-bar-height: 48px;
+        /* how tall the headlines are: Library, Modes, Controls, Playback,
+           and how far the first one in each panel sits below the title bar */
+        --section-title-height: 48px;
+        --headline-top-gap: 12px;
+        /* the grey buttons, the larger ones in the library and Playback,
+           and how round their corners are */
+        --button-height: 36px;
+        --large-button-height: 44px;
+        --radius: 6px;
+        --large-radius: 8px;
+        --card-radius: 14px;
+        /* the size of the small labels in capitals */
+        --label-size: 10.5px;
+        --label-tracking: 0.14em;
+        /* the size and spacing of the headlines: Library, Modes, Controls,
+           Playback, and Iteration in the title bar */
+        --headline-size: 20px;
+        --headline-tracking: -0.2px;
+        /* the quiet ring around a button reached with the Tab key, instead
+           of the browser's blue one */
+        --focus-ring: 2px solid var(--button-pressed-color);
       }
-      /* the g key hides the project title with the panels: then nothing
-         needs to make room for it */
-      body.without-project-title {
-        --project-title-height: 0px;
-      }
-
-      /* Every button in both panels and the preview has the same size: this
-         tall, with this much room left and right of its text. The square
-         icon buttons are as wide as they are tall. */
-      :root {
-        --button-height: 28px;
-        --button-padding: 10px;
-      }
-
-      /* the control panel: the whole height of the window, flush with the
-         right edge. The sketch centres the grid between it and the library. */
-      .lil-gui.lil-root.lil-auto-place {
-        top: var(--project-title-height);
-        right: 0;
-        height: calc(100% - var(--project-title-height));
-        /* lil-gui reads its width from --width */
-        --width: var(--panel-width);
-      }
-
-      /* The part of each panel that scrolls when it gets long: the folders
-         in the control panel, the cards in the library. A scrollbar takes
-         room from what is inside, which made the padding seem to change as
-         soon as one appeared. "stable" keeps that room free on the right all
-         the time, scrollbar or not. The left side is left alone, so what is
-         inside lines up with the panel titles above. */
-      .lil-gui.lil-root > .lil-children,
-      .library-list {
-        scrollbar-gutter: stable;
-      }
-
-      /* the size of the text in the control panel. Every folder sets its
-         own sizes, so this has to apply to all of them, not only the panel. */
-      .lil-gui {
-        --font-size: 14px;
-        --input-font-size: 14px;
-        /* the height of each row, raised with the text so it still fits */
-        --widget-height: 24px;
-        /* lil-gui's room left and right of every title and control */
-        --padding: var(--panel-padding);
+      /* INVERTED COLORS, while the Invert switch is on: every color above
+         turned around (each channel is 255 minus the one above), so light
+         becomes dark. The accent keeps its color. src/sketch.js inverts
+         the drawing's Main and Background at the same time. */
+      body.is-inverted {
+        --page-color: rgb(9 9 11);
+        --card-color: rgb(0 0 0);
+        --line-color: rgb(29 29 33);
+        --ink-color: rgb(231 231 231);
+        --label-color: rgb(183 183 185);
+        --muted-color: rgb(117 117 121);
+        --button-color: rgb(21 21 24);
+        --button-hover-color: rgb(31 31 35);
+        --button-pressed-color: rgb(43 43 47);
+        --primary-color: rgb(231 231 231);
+        --primary-hover-color: rgb(199 199 201);
+        --primary-text-color: rgb(5 5 7);
+        --track-color: rgb(43 43 47);
+        --load-button-color: rgb(0 0 0 / 0.92);
+        --backdrop-color: rgb(19 19 23 / 0.72);
       }
 
-      /* the buttons in the control panel (Reconnect, Clear, the switches,
-         the Style field…), sized like all the others. Side by side, each
-         takes the room its text needs, so a long word like "Animation"
-         isn't cut off. */
-      .lil-gui .lil-controller button {
-        height: var(--button-height);
-        padding: 0 var(--button-padding);
-        width: auto;
-        flex: 1 1 auto;
-      }
-
-      /* the bold font for the folder titles, straight from the fonts folder */
-      @font-face {
-        font-family: 'SpaceGrotesk-Bold';
-        src: url('/fonts/SpaceGrotesk-Bold.otf');
-        font-weight: 700;
-      }
-
-      /* the titles: Controls and Library at the top of the two panels, and
-         the folders (Modes, Grid, Anchors…) */
-      .lil-gui > .lil-title,
-      .library-title {
-        font-family: 'SpaceGrotesk-Bold', sans-serif;
-        font-size: 20px;
-        font-weight: 700;
-        /* 0.5px wider than the rest of the text */
-        letter-spacing: 1px;
-      }
-      /* taller, so the bigger text fits */
-      .lil-gui > .lil-title {
-        --title-height: 36px;
-      }
-      /* Modes and Library, the headlines of the two panels, are a bit
-         bigger than the folder titles. Both get exactly the same box: 36px
-         tall, with a line as tall as the box, so the text sits at the same
-         height in both. */
-      .lil-gui.lil-root > .lil-title,
-      .library-title {
-        font-size: 22px;
-        height: 36px;
-        line-height: 36px;
-        padding: 0 var(--panel-padding);
-      }
-      /* Modes is only a headline, like Library: clicking it doesn't fold
-         the panel away, and it has no arrow in front */
-      .lil-gui.lil-root > .lil-title {
-        pointer-events: none;
-      }
-      .lil-gui.lil-root > .lil-title::before {
-        content: none;
-      }
-      /* The Modes folder always stays open and has no title of its own:
-         the panel's headline above it already says Modes. */
-      .lil-gui.lil-always-open > .lil-title {
-        display: none;
-      }
-
-      /* the Controls headline: between the modes and the folders, it looks
-         like the panel's headline at the top. Randomize All and Reset All
-         sit side by side below it, lined up with the controls. */
-      .panel-section-title {
-        /* the title on the left, icons (Playback) on the right */
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        height: 36px;
-        line-height: 36px;
-        padding: 0 var(--panel-padding) 0 calc(var(--panel-padding) + var(--arrow-width));
-        background: var(--title-background-color);
-        color: var(--title-text-color);
-        font-family: 'SpaceGrotesk-Bold', sans-serif;
-        font-size: 22px;
-        font-weight: 700;
-        letter-spacing: 1px;
-      }
-      .panel-section-actions {
-        display: flex;
-        gap: 4px;
-        padding: var(--title-gap) var(--panel-padding) var(--title-gap) calc(var(--panel-padding) + var(--arrow-width));
-      }
-      .panel-section-actions button {
-        flex: 1;
-        height: var(--button-height);
-        padding: 0 var(--button-padding);
-        background: var(--widget-color);
-        border-radius: var(--widget-border-radius);
-      }
-      .panel-section-actions button:hover {
-        background: var(--hover-color);
-      }
-      /* Restart and Play/Pause on the right of the Playback headline:
-         square, with the icon in the middle */
-      .panel-section-icons {
-        display: flex;
-        gap: 4px;
-      }
-      .panel-section-icons .panel-icon-button {
-        width: var(--button-height);
-        height: var(--button-height);
-        padding: 0;
-        display: flex;
+      /* THE BUTTONS outside of lil-gui's own rows, in both panels and the
+         preview: light grey, with rounded corners, an icon (if it has one)
+         in front of its word. makeButton() and makeIconButton() in
+         src/lib/gui.js give them the class ui-button. */
+      .ui-button {
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: var(--widget-color);
-        border-radius: var(--widget-border-radius);
-      }
-      .panel-section-icons .panel-icon-button:hover {
-        background: var(--hover-color);
-      }
-
-      /* The line between folders: lil-gui draws it on the title itself,
-         right against the text. Here the title loses its lines, and the
-         folder gets the line on its top edge instead. A margin above the
-         title keeps some room between the line and the title (see
-         --title-line-gap). */
-      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
-        border-color: transparent;
-        margin-top: var(--title-line-gap);
-      }
-      /* The arrow (▾ or ▸) in front of a folder title hangs out to the left,
-         into the padding, so the title's text starts exactly where the
-         Controls title does. The arrow box is pulled back by its own width;
-         the arrow sits at its left, so a wider box means more space between
-         the arrow and the text. */
-      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title::before {
-        width: var(--arrow-width);
-        margin-left: calc(-1 * var(--arrow-width));
-        padding-right: 0;
-      }
-      /* So the arrows still keep the panel padding from the left edge, the
-         control panel has the arrows' width more room on the left: the
-         Controls title, the folder titles and every control move in by it,
-         and all of them still line up. */
-      .lil-gui.lil-root > .lil-title,
-      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title,
-      .lil-gui .lil-controller {
-        padding-left: calc(var(--panel-padding) + var(--arrow-width));
-      }
-      /* every folder, open or closed: the line on top, and the group
-         padding below its end */
-      .lil-gui.lil-root > .lil-children > .lil-gui {
-        border-top: 1px solid var(--widget-color);
-        padding: 0 0 var(--group-padding);
-      }
-      /* the first folder (Modes) has nothing above it to separate it from,
-         so its line is invisible, and instead of the room below the line it
-         gets the same small gap below the Controls title as the library has
-         between its title and the Save Iteration button */
-      .lil-gui.lil-root > .lil-children > .lil-gui:first-child {
-        border-top-color: transparent;
-        padding-top: var(--title-gap);
-      }
-      .lil-gui.lil-root > .lil-children > .lil-gui:first-child > .lil-title {
-        margin-top: 0;
-      }
-      /* A closed folder lights up as a whole when the mouse is over it, from
-         the line down to the next folder, not only its title. A click
-         anywhere in it opens it (see src/sketch.js). The title doesn't light
-         up on its own then, so the whole section is one even color. */
-      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed:hover {
-        background: var(--title-background-color);
+        gap: 8px;
+        height: var(--button-height);
+        padding: 0 12px;
+        border: none;
+        border-radius: var(--radius);
+        background: var(--button-color);
+        color: var(--ink-color);
+        font: inherit;
+        font-size: 14px;
         cursor: pointer;
       }
-      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed > .lil-title:hover {
-        background: none;
-        opacity: 1;
+      .ui-button:hover {
+        background: var(--button-hover-color);
       }
-      /* room between an open folder's title and its first control */
-      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-children {
-        padding-top: var(--group-title-gap);
+      .ui-button:active {
+        background: var(--button-pressed-color);
+      }
+      .ui-button:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: 1px;
+      }
+      /* the buttons for selected variations, while none is selected */
+      .ui-button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .ui-button:disabled:hover {
+        background: var(--button-color);
+      }
+      /* icons keep their size when the button gets narrow */
+      button svg {
+        flex-shrink: 0;
       }
 
-      /* the tracking (space between letters) of every text in both panels
-         and the library's preview. Buttons and text fields don't pass it on
-         by themselves, so they are told to take it over. */
-      .lil-gui,
-      .library,
-      .library-preview {
-        letter-spacing: 0.5px;
+      /* THE SMALL LABELS in capitals, like on a technical drawing: in the
+         title bar, around the grid, on the start screen, at the bottom of
+         the library and in the large preview */
+      .top-bar-brand,
+      .top-bar-subtitle,
+      .start-project-name,
+      .start-mode-label,
+      .stage-label,
+      .library-footer,
+      .library-preview-labels {
+        font-family: var(--label-font);
+        font-size: var(--label-size);
+        letter-spacing: var(--label-tracking);
+        text-transform: uppercase;
       }
-      .lil-gui :is(button, input, select, textarea),
-      .library :is(button, input, select, textarea),
-      .library-preview :is(button, input, select, textarea) {
-        letter-spacing: inherit;
-      }
-
-      /* the library, on the left. Its colors and sizes match the control
-         panel, and the outline of the loaded variation uses the accent color. */
-      .library {
-        position: fixed;
-        top: var(--project-title-height);
-        left: 0;
-        z-index: 1001;
-        width: var(--panel-width);
-        height: calc(100% - var(--project-title-height));
+      /* the project's name with its subtitle below it, made by
+         createProjectName() in src/lib/gui.js */
+      .start-project-name,
+      .library-project-name {
         display: flex;
         flex-direction: column;
-        background: #1f1f1f;
-        color: #ebebeb;
-        font-family: panel-font, -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 14px;
+        gap: 6px;
       }
-      .library[hidden] {
-        display: none;
-      }
-      /* without this, the rows of buttons below would still show when the
-         library hides them */
-      .library [hidden] {
-        display: none;
-      }
-      .library-title {
-        background: #111111;
+      .project-subtitle {
+        color: var(--muted-color);
       }
 
-      /* the title above the grid: a bar across the top of the middle, from
-         the library to the control panel, styled like the Library title,
-         with the text in the middle, above the middle of the grid */
-      .stage-title {
-        position: fixed;
-        top: var(--project-title-height);
-        left: var(--panel-width);
-        right: var(--panel-width);
-        z-index: 1001;
-        height: 36px;
-        line-height: 36px;
-        text-align: center;
-        padding: 0 var(--panel-padding);
-        background: #111111;
-        color: #ebebeb;
-        font-family: 'SpaceGrotesk-Bold', sans-serif;
-        font-size: 22px;
-        font-weight: 700;
-        letter-spacing: 1px;
-      }
-      .stage-title[hidden] {
-        display: none;
-      }
-
-      /* the project title: the project's name across the whole window,
-         above the Library, Iteration and Modes titles, and bigger than
-         them. Its text is projectTitle in src/config.js. */
-      .project-title {
+      /* THE TITLE BAR across the top: the project's mark and name on the
+         left, the title of the middle in the middle, the subtitle on the
+         right. Its texts are in src/config.js. */
+      .top-bar {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         z-index: 1001;
-        height: var(--project-title-height);
-        line-height: var(--project-title-height);
+        height: var(--top-bar-height);
+        display: grid;
+        /* the outer two take the same room, so the middle stays centred */
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
         padding: 0 var(--panel-padding);
-        background: #111111;
-        color: #ebebeb;
-        font-family: 'SpaceGrotesk-Bold', sans-serif;
-        font-size: 40px;
-        font-weight: 700;
-        letter-spacing: 1px;
+        background: var(--page-color);
+        border-bottom: 1px solid var(--line-color);
+        color: var(--ink-color);
       }
-      .project-title[hidden] {
-        display: none;
-      }
-      .library button,
-      .library-preview button {
-        height: var(--button-height);
-        padding: 0 var(--button-padding);
-      }
-      /* the name field above each card */
-      .library input {
-        height: 20px;
-      }
-      .library button,
-      .library input,
-      .library-preview button {
+      /* the mark and the name: a button back to the start screen */
+      .top-bar-brand {
+        justify-self: start;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 0;
         border: none;
-        border-radius: 2px;
-        background: #424242;
+        background: none;
         color: inherit;
-        font: inherit;
         cursor: pointer;
       }
-      .library button:hover,
-      .library-preview button:hover {
-        background: #4f4f4f;
+      .top-bar-brand:hover {
+        opacity: 0.6;
       }
-      /* the buttons for selected variations, while none is selected */
-      .library button:disabled {
+      .top-bar-brand:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: 4px;
+        border-radius: var(--radius);
+      }
+      .top-bar-brand svg {
+        color: var(--label-color);
+      }
+      /* the same size as the Library and Modes headlines */
+      .top-bar-title {
+        font-family: var(--heading-font);
+        font-size: var(--headline-size);
+        letter-spacing: var(--headline-tracking);
+      }
+      .top-bar-subtitle {
+        justify-self: end;
+        color: var(--muted-color);
+      }
+
+      /* THE START SCREEN, see src/lib/start.js: the question on the left,
+         over the drawing, and the mode cards on the right. It lies below
+         the title bar. While it is open (is-starting), the panels, the
+         labels around the grid and the title in the middle of the title
+         bar wait, invisible. Once a mode is picked, the start screen fades
+         out in the first half of the change, and they fade in in the
+         second half, so the two never lie on top of each other. Going
+         back to the start screen, it is the other way round: they fade
+         out first, then the start screen fades in. Each fade takes half of
+         the change; whatever appears second waits for the first half.
+         src/lib/start.js sets --start-transition-duration. */
+      body {
+        --fade-duration: calc(var(--start-transition-duration) / 2);
+        /* on the way to the main screen: the start screen goes first */
+        --start-screen-delay: 0s;
+        --main-screen-delay: var(--fade-duration);
+      }
+      body.is-starting {
+        /* on the way to the start screen: the main screen goes first */
+        --start-screen-delay: var(--fade-duration);
+        --main-screen-delay: 0s;
+      }
+      .library,
+      .lil-gui.lil-root,
+      .stage-frame,
+      .top-bar-title {
+        transition: opacity var(--fade-duration) ease var(--main-screen-delay);
+      }
+      body.is-starting .library,
+      body.is-starting .lil-gui.lil-root,
+      body.is-starting .stage-frame,
+      body.is-starting .top-bar-title {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .start-screen {
+        /* how wide the column of cards is: a third of the window, so the
+           cards grow and shrink with it, but never narrower than this */
+        --start-modes-width: max(320px, 34vw);
+        position: fixed;
+        top: var(--top-bar-height);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1002;
+        display: flex;
+        color: var(--ink-color);
+        transition: opacity var(--fade-duration) ease var(--start-screen-delay);
+      }
+      body:not(.is-starting) .start-screen {
+        opacity: 0;
+        pointer-events: none;
+      }
+      /* the left part is see-through, so the drawing shows, and lets
+         clicks through to the canvas */
+      .start-stage {
+        position: relative;
+        flex: 1;
+        pointer-events: none;
+      }
+      .start-headline {
+        position: absolute;
+        top: 40px;
+        left: 40px;
+        font-family: var(--heading-font);
+        font-size: clamp(44px, 5vw, 84px);
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        /* the \n in the text starts a new line */
+        white-space: pre-line;
+      }
+      .start-project-name {
+        position: absolute;
+        left: 40px;
+        bottom: 36px;
+        color: var(--muted-color);
+      }
+      /* the right part: the cards at the bottom, below each other */
+      .start-modes {
+        width: var(--start-modes-width);
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 14px;
+        padding: 16px 16px 56px;
+        background: var(--page-color);
+        border-left: 1px solid var(--line-color);
+        transition: transform var(--fade-duration) ease var(--start-screen-delay);
+      }
+      /* Invert and Anchors at the top of the card column, on the right,
+         below each other, with their switches lined up on the right.
+         Invert sits at the height of the panel's Invert switch. The cards
+         sit at the bottom. */
+      .start-switches {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        margin: 4px 18px auto;
+      }
+      /* the cards slide a little to the right as they fade out, and back
+         as they come in again */
+      body:not(.is-starting) .start-modes {
+        transform: translateX(32px);
+      }
+      .start-mode {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        row-gap: 10px;
+        padding: 30px 36px 28px;
+        border: 1px solid var(--line-color);
+        border-radius: var(--card-radius);
+        background: var(--page-color);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: background 200ms, border-color 200ms;
+      }
+      .start-mode:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: 2px;
+      }
+      /* the card of the mode on show: tinted in the accent color */
+      .start-mode.is-active {
+        background: color-mix(in srgb, var(--accent-color) 10%, var(--card-color));
+        border-color: var(--accent-color);
+      }
+      .start-mode-label {
+        grid-column: 1 / -1;
+        color: var(--muted-color);
+      }
+      .start-mode-name {
+        font-family: var(--heading-font);
+        font-size: clamp(32px, 3vw, 48px);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .start-mode-arrow {
+        display: flex;
+        transition: transform 200ms;
+      }
+      .start-mode-arrow svg {
+        width: 28px;
+        height: 28px;
+      }
+      .start-mode:hover .start-mode-arrow,
+      .start-mode.is-active .start-mode-arrow {
+        transform: translateX(4px);
+      }
+
+      /* THE LABELS AROUND THE GRID: small capitals above and below its
+         corners, and a + beyond each corner, like on a drawing board.
+         src/sketch.js moves them to where the grid is. */
+      /* exactly as big as the grid; src/sketch.js sets --grid-size */
+      .stage-frame {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: var(--grid-size);
+        height: var(--grid-size);
+        /* above the drawing, below the save flash and the panels */
+        z-index: 999;
+        /* clicks go through to the canvas below */
+        pointer-events: none;
+      }
+      .stage-label {
+        position: absolute;
+        white-space: nowrap;
+        color: var(--muted-color);
+      }
+      .stage-label.is-top-left,
+      .stage-label.is-top-right {
+        bottom: calc(100% + 12px);
+      }
+      .stage-label.is-bottom-left,
+      .stage-label.is-bottom-right {
+        top: calc(100% + 12px);
+      }
+      .stage-label.is-top-left,
+      .stage-label.is-bottom-left {
+        left: 0;
+      }
+      .stage-label.is-top-right,
+      .stage-label.is-bottom-right {
+        right: 0;
+      }
+      /* the + marks: two thin lines crossing, this far out from each
+         corner, sideways and up or down */
+      .stage-mark {
+        --mark-size: 13px;
+        --mark-distance-x: 36px;
+        --mark-distance-y: 10px;
+        position: absolute;
+        width: var(--mark-size);
+        height: var(--mark-size);
+      }
+      .stage-mark::before,
+      .stage-mark::after {
+        content: '';
+        position: absolute;
+        background: var(--muted-color);
+      }
+      .stage-mark::before {
+        left: calc(var(--mark-size) / 2);
+        width: 1px;
+        height: 100%;
+      }
+      .stage-mark::after {
+        top: calc(var(--mark-size) / 2);
+        width: 100%;
+        height: 1px;
+      }
+      .stage-mark.is-top-left,
+      .stage-mark.is-top-right {
+        top: calc(-1 * var(--mark-distance-y) - var(--mark-size) / 2);
+      }
+      .stage-mark.is-bottom-left,
+      .stage-mark.is-bottom-right {
+        bottom: calc(-1 * var(--mark-distance-y) - var(--mark-size) / 2);
+      }
+      .stage-mark.is-top-left,
+      .stage-mark.is-bottom-left {
+        left: calc(-1 * var(--mark-distance-x) - var(--mark-size) / 2);
+      }
+      .stage-mark.is-top-right,
+      .stage-mark.is-bottom-right {
+        right: calc(-1 * var(--mark-distance-x) - var(--mark-size) / 2);
+      }
+
+      /* THE SECTION HEADLINES: Library, Modes, Controls and Playback. All
+         get the same box, so their text sits at the same height. */
+      .library-title,
+      .panel-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: var(--section-title-height);
+        padding: 0 var(--panel-padding);
+        background: none;
+        color: var(--ink-color);
+        font-family: var(--heading-font);
+        font-size: var(--headline-size);
+        font-weight: 700;
+        letter-spacing: var(--headline-tracking);
+      }
+      /* the first headline of each panel sits a little below the title bar */
+      .library-title,
+      .panel-section-title.is-first {
+        margin-top: var(--headline-top-gap);
+      }
+      /* Controls and Playback start a new section, below a line */
+      .panel-section-title:not(.is-first) {
+        border-top: 1px solid var(--line-color);
+      }
+      /* the dots on the right of the Controls headline: no background
+         until the mouse is over them */
+      .panel-section-title .panel-more-button {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        background: none;
+        color: var(--label-color);
+      }
+
+      /* THE SWITCHES: a name and a small on/off switch, like Invert in
+         the panel and Anchors and Invert on the start screen. Made
+         by createSwitchButton() in src/lib/gui.js. "button." makes these
+         rules win over lil-gui's own rules for buttons. */
+      button.switch-button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: auto;
+        padding: 4px 0;
+        border: none;
+        background: none;
+        color: var(--label-color);
+        font-family: var(--text-font);
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button.switch-button:hover {
+        color: var(--ink-color);
+      }
+      button.switch-button:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: 2px;
+        border-radius: var(--radius);
+      }
+      /* the switch: a rounded track with a round knob, on the left while
+         off, on the right and on a dark track while on */
+      .switch-track {
+        --track-width: 36px;
+        --track-height: 20px;
+        --knob-inset: 2px;
+        --knob-size: calc(var(--track-height) - 2 * var(--knob-inset));
+        position: relative;
+        width: var(--track-width);
+        height: var(--track-height);
+        border-radius: calc(var(--track-height) / 2);
+        background: var(--button-pressed-color);
+        transition: background 200ms;
+      }
+      .switch-track::after {
+        content: '';
+        position: absolute;
+        top: var(--knob-inset);
+        left: var(--knob-inset);
+        width: var(--knob-size);
+        height: var(--knob-size);
+        border-radius: 50%;
+        background: var(--card-color);
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+        transition: transform 200ms;
+      }
+      .switch-button[aria-checked='true'] .switch-track {
+        background: var(--ink-color);
+      }
+      .switch-button[aria-checked='true'] .switch-track::after {
+        transform: translateX(calc(var(--track-width) - var(--track-height)));
+      }
+
+      /* THE CONTROL PANEL on the right, the whole height below the title
+         bar. lil-gui reads its colors and sizes from these variables, and
+         every folder sets its own, so they apply to all of them. */
+      .lil-gui {
+        --background-color: var(--page-color);
+        --text-color: var(--ink-color);
+        --title-background-color: var(--page-color);
+        --title-text-color: var(--ink-color);
+        --widget-color: var(--button-color);
+        --hover-color: var(--button-hover-color);
+        --focus-color: var(--button-pressed-color);
+        /* the slider knobs and the typed text */
+        --number-color: var(--ink-color);
+        --string-color: var(--ink-color);
+        --font-family: var(--text-font);
+        --font-size: 14px;
+        --input-font-size: 14px;
+        /* how tall each row is, and the room between two rows */
+        --widget-height: 28px;
+        --spacing: 6px;
+        --padding: var(--panel-padding);
+        /* how much of a row the name in front takes */
+        --name-width: 38%;
+        --widget-border-radius: var(--radius);
+        --slider-knob-width: 2px;
+        /* how tall the folder titles are */
+        --title-height: 44px;
+        --scrollbar-width: 6px;
+      }
+      .lil-gui.lil-root.lil-auto-place {
+        top: var(--top-bar-height);
+        right: 0;
+        height: calc(100% - var(--top-bar-height));
+        max-height: none;
+        border-left: 1px solid var(--line-color);
+        /* lil-gui reads its width from --width */
+        --width: var(--panel-width);
+      }
+      /* lil-gui's own title would fold the whole panel away, so it is
+         hidden. The panel's headlines, starting with Modes, are made in
+         src/sketch.js. */
+      .lil-gui.lil-root > .lil-title {
+        display: none;
+      }
+
+      /* The part of each panel that scrolls when it gets long: the folders
+         in the control panel, the cards in the library. A scrollbar takes
+         room from what is inside, which made the padding seem to change as
+         soon as one appeared. "stable" keeps that room free on the right
+         all the time, scrollbar or not. */
+      .lil-gui.lil-root > .lil-children,
+      .library-list {
+        scrollbar-gutter: stable;
+      }
+
+      /* The Modes folder always stays open and has no title of its own:
+         the panel's headline above it already says Modes. Its controls
+         line up with the headline. */
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-always-open > .lil-title {
+        display: none;
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-always-open {
+        border-top: none;
+        padding-bottom: 18px;
+      }
+
+      /* every other folder: a line on top, and its title with an arrow in
+         front. The title's text starts where the controls below start. */
+      .lil-gui.lil-root > .lil-children > .lil-gui {
+        border-top: 1px solid var(--line-color);
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding: 0 var(--panel-padding);
+        border: none;
+        font-family: var(--heading-font);
+        font-size: 16px;
+        font-weight: 700;
+      }
+      /* the arrow: the corner of a small square, turned to point down while
+         the folder is open and right while it is closed. It takes
+         --arrow-width in all, so the title's text starts right after. */
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title::before {
+        --arrow-size: 7px;
+        --arrow-left: 2px;
+        content: '';
+        flex-shrink: 0;
+        width: var(--arrow-size);
+        height: var(--arrow-size);
+        padding: 0;
+        margin: 0 calc(var(--arrow-width) - var(--arrow-size) - var(--arrow-left)) 0 var(--arrow-left);
+        border: solid currentColor;
+        border-width: 0 1.5px 1.5px 0;
+        transform: translateY(-2px) rotate(45deg);
+        transition: transform 200ms;
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed > .lil-title::before {
+        transform: rotate(-45deg);
+      }
+      /* A closed folder lights up as a whole when the mouse is over it.
+         A click anywhere in it opens it (see src/sketch.js). The title
+         doesn't light up on its own then, so the whole section is one
+         even color. */
+      .lil-gui.lil-root > .lil-children > .lil-gui.lil-closed:hover {
+        background: var(--button-color);
+        cursor: pointer;
+      }
+      .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title:hover {
+        background: none;
+        opacity: 1;
+      }
+      /* room below the last control of an open folder. A margin, not a
+         padding, so it folds away smoothly with the folder. */
+      .lil-gui.lil-root > .lil-children > .lil-gui:not(.lil-always-open) > .lil-children > :last-child {
+        margin-bottom: 16px;
+      }
+
+      /* the folder icons: the eye and the Randomize arrows on the right of
+         a folder's title */
+      .lil-title-icons {
+        position: absolute;
+        right: var(--panel-padding);
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        gap: 12px;
+        color: var(--label-color);
+      }
+      .lil-title-icon {
+        display: flex;
+        cursor: pointer;
+      }
+      .lil-title-icon:hover {
+        color: var(--ink-color);
+      }
+
+      /* the rows inside the folders start where the folder titles' text
+         starts; the rows of Modes start at the headline */
+      .lil-gui .lil-controller {
+        padding: 0 var(--panel-padding) 0 calc(var(--panel-padding) + var(--arrow-width));
+      }
+      .lil-gui.lil-always-open .lil-controller {
+        padding-left: var(--panel-padding);
+      }
+      .lil-gui .lil-controller > .lil-name {
+        color: var(--label-color);
+      }
+      /* the sliders: a light track, a little lower than the row, with a
+         thin black line for a knob */
+      .lil-gui .lil-controller.lil-number .lil-slider {
+        height: 22px;
+      }
+      .lil-gui input[type='text'] {
+        padding: 0 10px;
+      }
+      /* the color fields get a thin edge, so a light color still shows
+         where it ends */
+      .lil-gui .lil-controller.lil-color .lil-display {
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+      }
+
+      /* the buttons in the folders (Iterate, Clear, the switches, the
+         Style field). Side by side, each takes the room its text needs, so
+         a long word like "Animation" isn't cut off. */
+      .lil-gui .lil-controller button {
+        height: var(--button-height);
+        padding: 0 12px;
+        width: auto;
+        flex: 1 1 auto;
+      }
+
+      /* the switches: Glyph | Shape | Animation and the others. The chosen
+         part is black; in the smaller, secondary switches only a darker
+         grey, so the main switch stands out. */
+      .lil-gui .lil-switch .lil-widget {
+        gap: 4px;
+      }
+      .lil-gui .lil-switch button {
+        height: 38px;
+      }
+      .lil-gui .lil-switch button.is-chosen {
+        background: var(--primary-color);
+        color: var(--primary-text-color);
+      }
+      .lil-gui .lil-switch.is-secondary button {
+        height: 32px;
+      }
+      .lil-gui .lil-switch.is-secondary button.is-chosen {
+        background: var(--button-pressed-color);
+        color: var(--ink-color);
+      }
+
+      /* Randomize All and Reset All, side by side below Controls */
+      .panel-section-actions {
+        display: flex;
+        gap: 6px;
+        padding: 0 var(--panel-padding) 18px;
+      }
+      .panel-section-actions .ui-button {
+        flex: 1;
+      }
+
+      /* Playback: Restart, Play/Pause and Stop as squares, then the bar */
+      .panel-playback {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 var(--panel-padding) 24px;
+      }
+      .panel-playback .ui-button {
+        width: var(--large-button-height);
+        height: var(--large-button-height);
+        padding: 0;
+        border-radius: var(--large-radius);
+      }
+      /* The bar is as tall as a finger needs to grab it; the thin line
+         is drawn in its middle. */
+      .panel-progress {
+        position: relative;
+        flex: 1;
+        height: 24px;
+        margin: 0 8px 0 16px;
+        cursor: pointer;
+        /* a drag on it moves the dot, not the panel's scroll */
+        touch-action: none;
+      }
+      .panel-progress::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--track-color);
+        transform: translateY(-50%);
+      }
+      .panel-progress-dot {
+        position: absolute;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--ink-color);
+        transform: translate(-50%, -50%);
+      }
+      /* outside Animation mode there is no loop to show */
+      .panel-progress.is-idle {
         opacity: 0.4;
         cursor: default;
+        pointer-events: none;
       }
-      .library button:disabled:hover {
-        background: #424242;
+
+      /* THE LIBRARY on the left */
+      .library {
+        position: fixed;
+        top: var(--top-bar-height);
+        left: 0;
+        z-index: 1001;
+        width: var(--panel-width);
+        height: calc(100% - var(--top-bar-height));
+        display: flex;
+        flex-direction: column;
+        background: var(--page-color);
+        border-right: 1px solid var(--line-color);
+        color: var(--ink-color);
+        font-family: var(--text-font);
+        font-size: 14px;
       }
+      /* Save Iteration: the one black button, with its icon at the left
+         and its word in the middle */
       .library-save {
-        margin: var(--title-gap) var(--panel-padding);
+        position: relative;
+        height: 48px;
+        margin: 8px var(--panel-padding) 10px;
+        background: var(--primary-color);
+        color: var(--primary-text-color);
+      }
+      .library-save:hover {
+        background: var(--primary-hover-color);
+      }
+      .library-save svg {
+        position: absolute;
+        left: 18px;
       }
       .library-selection-actions {
         display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
+        gap: 8px;
         margin: 0 var(--panel-padding) 8px;
       }
-      .library-selection-actions button {
+      .library-selection-actions .ui-button {
         flex: 1;
+        height: 40px;
       }
+      .library-divider {
+        border: none;
+        border-top: 1px solid var(--line-color);
+        margin: 16px var(--panel-padding) 20px;
+      }
+
+      /* the message while nothing is saved: a dot, a line, and a quieter
+         hint below it */
       .library-empty {
         padding: 0 var(--panel-padding);
-        line-height: 1.4;
-        /* a \n in the text starts a new line */
-        white-space: pre-line;
-        opacity: 0.6;
-        /* right below the buttons, with the same small gap as between the
-           buttons and the library's title */
-        margin-top: var(--title-gap);
+        line-height: 1.5;
       }
-      /* the empty list takes no room while the message shows */
+      .library-empty-title,
+      .library-empty-hint {
+        padding-left: 22px;
+      }
+      .library-empty-title {
+        position: relative;
+      }
+      .library-empty-title::before {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 0.55em;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ink-color);
+      }
+      .library-empty-hint {
+        margin-top: 10px;
+        color: var(--muted-color);
+      }
+
+      /* the saved variations: one card each, newest on top */
       .library-list:empty {
         display: none;
       }
@@ -425,17 +939,66 @@
         flex: 1;
         overflow-y: auto;
         list-style: none;
-        padding: 0 var(--panel-padding) 8px;
+        padding: 0 var(--panel-padding) 16px;
+      }
+      /* a thin scrollbar, like the control panel's */
+      .library-list::-webkit-scrollbar {
+        width: 6px;
+      }
+      .library-list::-webkit-scrollbar-thumb {
+        border-radius: 3px;
+        background: var(--button-pressed-color);
       }
       .library-item {
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        margin-bottom: 12px;
+        gap: 10px;
+        margin-bottom: 14px;
+        padding: 12px;
+        background: var(--card-color);
+        border: 1px solid var(--line-color);
+        border-radius: var(--card-radius);
+        box-shadow: 0 8px 24px rgb(0 0 0 / 0.04);
       }
-      /* the picture, with the checkbox and the selection layer on top */
+      /* the variation loaded or saved last */
+      .library-item.is-active {
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 1px var(--accent-color);
+      }
+      /* the name, to click and type into, and Delete on its right */
+      .library-item-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .library-item-header input {
+        flex: 1;
+        min-width: 0;
+        height: 32px;
+        padding: 0 6px;
+        border: none;
+        border-radius: var(--radius);
+        background: transparent;
+        color: inherit;
+        font-family: var(--heading-font);
+        font-size: 18px;
+        cursor: text;
+      }
+      .library-item-header input:focus {
+        background: var(--button-color);
+        outline: none;
+      }
+      .library-item-header .ui-button {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+      }
+      /* the picture, with the checkbox, the selection layer and Load on top */
       .library-thumbnail {
         position: relative;
+        overflow: hidden;
+        border-radius: 10px;
+        background: var(--button-color);
       }
       .library-thumbnail img {
         display: block;
@@ -443,16 +1006,12 @@
         aspect-ratio: 1;
         /* a slanted grid makes a wider picture; it is shown whole */
         object-fit: contain;
-        outline: 1px solid #424242;
         cursor: zoom-in;
-      }
-      .library-item.is-active img {
-        outline: 2px solid var(--accent-color, #39ff14);
       }
       .library-selection-mask {
         position: absolute;
         inset: 0;
-        background: var(--accent-color, #39ff14);
+        background: var(--accent-color);
         opacity: 0;
         /* clicks go through to the picture below */
         pointer-events: none;
@@ -460,60 +1019,68 @@
       .library-item.is-selected .library-selection-mask {
         opacity: 0.25;
       }
+      /* the checkbox: a small white square in a see-through frame, so it
+         shows on light and dark drawings. Ticked, it fills with the accent. */
       .library-item .library-selection-checkbox {
+        --checkbox-halo: 0 0 0 6px rgb(128 128 128 / 0.3);
         position: absolute;
-        top: 6px;
-        left: 6px;
-        width: 14px;
-        height: 14px;
-        padding: 0;
+        top: 14px;
+        left: 14px;
+        width: 18px;
+        height: 18px;
+        appearance: none;
+        border-radius: 4px;
+        background: var(--card-color);
+        box-shadow: var(--checkbox-halo);
         cursor: pointer;
-        accent-color: var(--accent-color, #39ff14);
       }
-      .library-item input {
-        padding: 0 4px;
-        background: transparent;
-        cursor: text;
+      .library-item .library-selection-checkbox:checked {
+        background: var(--accent-color);
+        box-shadow: inset 0 0 0 3px var(--card-color), var(--checkbox-halo);
       }
-      .library-item input:focus {
-        background: #424242;
-        outline: none;
-      }
-      /* Delete (x) and Load (arrow) on the picture's right corners, dark
-         enough to stand out on any drawing */
-      .library .library-icon-button {
-        position: absolute;
-        right: 6px;
-        width: var(--button-height);
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(31, 31, 31, 0.8);
-      }
-      .library .library-icon-button:hover {
-        background: #4f4f4f;
-      }
-      .library-delete {
-        top: 6px;
-      }
+      /* Load: a white square with an arrow on the picture's bottom right */
       .library-load {
-        bottom: 6px;
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border-radius: var(--large-radius);
+        background: var(--load-button-color);
+        box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+      }
+      .library-load:hover {
+        background: var(--card-color);
       }
 
-      /* the flash when saving: the accent color over the whole window, below
-         the two panels. It is invisible until src/lib/library.js fades it in
-         and out. White until the sketch has set the accent color. */
+      /* the project's mark, name and subtitle at the bottom of the library */
+      .library-footer {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 20px var(--panel-padding) 24px;
+      }
+      .library-footer svg {
+        flex-shrink: 0;
+        color: var(--label-color);
+      }
+
+      /* the flash when saving: the accent color over the whole window,
+         below the two panels. It is invisible until src/lib/library.js
+         fades it in and out. */
       .library-flash {
         position: fixed;
         inset: 0;
         z-index: 1000;
-        background: var(--accent-color, #ffffff);
+        background: var(--accent-color);
         opacity: 0;
         pointer-events: none;
       }
 
-      /* the large preview of a saved variation, over the whole window */
+      /* THE LARGE PREVIEW of a saved variation: a light card over the
+         blurred window */
       .library-preview {
         position: fixed;
         inset: 0;
@@ -522,38 +1089,69 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        background: rgba(0, 0, 0, 0.8);
-        color: #ebebeb;
-        font-family: panel-font, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--backdrop-color);
+        backdrop-filter: blur(6px);
+        color: var(--ink-color);
+        font-family: var(--text-font);
         font-size: 14px;
-      }
-      .library-preview[hidden] {
-        display: none;
       }
       .library-preview-content {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        padding: 8px;
-        background: #1f1f1f;
+        gap: 20px;
+        padding: 24px;
+        background: var(--page-color);
+        border: 1px solid var(--line-color);
+        border-radius: 18px;
+        box-shadow: 0 24px 64px rgb(0 0 0 / 0.14);
       }
+      /* the name, and Close on the right */
       .library-preview-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
+        gap: 16px;
       }
-      /* Close: a square x, like Delete on the cards */
-      .library-preview-header .library-icon-button {
-        width: var(--button-height);
+      .library-preview-name {
+        font-family: var(--heading-font);
+        font-size: 26px;
+        letter-spacing: -0.3px;
+      }
+      .library-preview-header .ui-button {
+        width: var(--large-button-height);
+        height: var(--large-button-height);
         padding: 0;
+        border: 1px solid var(--line-color);
+        border-radius: var(--large-radius);
+        background: none;
+      }
+      .library-preview-header .ui-button:hover {
+        background: var(--button-color);
+      }
+      /* a thin frame around the picture, with a label in each top corner */
+      .library-preview-frame {
+        padding: 12px 16px 16px;
+        border: 1px solid var(--line-color);
+        border-radius: 12px;
+      }
+      .library-preview-labels {
         display: flex;
-        align-items: center;
-        justify-content: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        color: var(--muted-color);
       }
       /* the picture and the guide layers on top of it */
       .library-preview-stage {
         position: relative;
+      }
+      /* as large as fits in the window, leaving room for the name above
+         and the buttons below */
+      .library-preview-image {
+        display: block;
+        width: min(calc(100vw - 160px), calc(100vh - 290px));
+        aspect-ratio: 1;
+        object-fit: contain;
+        border-radius: var(--radius);
       }
       /* the grid and the anchors, exactly over the picture. Clicks go
          through them. */
@@ -565,38 +1163,33 @@
         object-fit: contain;
         pointer-events: none;
       }
-      .library-preview-layer[hidden] {
-        display: none;
-      }
-      /* Grid, Anchors, PNG and SVG on the picture's bottom right corner, as
-         far in from the edges as the icons on the cards, and dark enough to
-         stand out on any drawing. All four have the same padding. */
+      /* below the frame: Grid and Anchors on the left, PNG and SVG on
+         the right */
       .library-preview-footer {
-        position: absolute;
-        right: 6px;
-        bottom: 6px;
         display: flex;
-        gap: 4px;
+        justify-content: space-between;
+        gap: 8px;
       }
-      .library-preview-footer button {
-        padding: 0 var(--button-padding);
-        background: rgba(31, 31, 31, 0.8);
+      .library-preview-buttons {
+        display: flex;
+        gap: 8px;
       }
-      /* a guide that is showing: its button lit up in the accent color */
-      .library-preview-footer button.is-on {
-        background: var(--accent-color, #39ff14);
-        color: #1f1f1f;
+      .library-preview-footer .ui-button {
+        height: var(--large-button-height);
+        padding: 0 20px;
+        gap: 10px;
       }
-      /* as large as fits in the window, leaving room for the name above */
-      .library-preview-image {
-        display: block;
-        width: min(calc(100vw - 64px), calc(100vh - 100px));
-        aspect-ratio: 1;
-        object-fit: contain;
+      /* a guide that is showing: its button tinted in the accent color */
+      .library-preview-footer .ui-button.is-on {
+        background: color-mix(in srgb, var(--accent-color) 22%, var(--card-color));
+      }
+      .library-preview-footer .ui-button.is-on:hover {
+        background: color-mix(in srgb, var(--accent-color) 32%, var(--card-color));
       }
     </style>
   </head>
-  <body>
+  <!-- is-starting: the page opens on the start screen, see src/lib/start.js -->
+  <body class="is-starting">
     <script type="module" src="/src/sketch.js"></script>
   </body>
 </html>
