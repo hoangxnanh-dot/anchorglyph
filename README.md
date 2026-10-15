@@ -1,246 +1,107 @@
-# Generative Typography
+# Anchorglyph
 
-A starting point for making type with code, using [p5.js](https://p5js.org).
-You type words into a panel, pick one of your own fonts, and write code that
-decides how those words get drawn.
+Project created by
+Xuan Nam Anh Hoang
+Quang Chien Nguyen
 
-No previous coding experience needed. Follow the steps below in order.
+This project was created as part of a one-week project in the course »Generative Typografie«,
+taught by Bernhard Hoffmann @HTW Berlin 2026.
+
+Inspired by »SAND CREATURES« from Anders Hoff – inconvergent:
+https://inconvergent.net/generative/sand-creatures/
+
+Fineliner Spline Style code based on: https://github.com/inconvergent/sand-spline
+Code translated and edited from Python to p5 with Claude Code
+
+Other Curve Styles based of »Fifteen Lines« by Manohar Vanga (Sighack)
+https://github.com/sighack/fifteen-lines
+
+Grid Template provided by Bernhard Hoffmann
+
+Concept
+
+The tool generates random anchor points within a grid
+and connects them using B-spline curves, creating abstract shapes
+that continuously evolve. Anchor points can be added, moved,
+or removed with a mouse click.
+
+Text can also serve as a source for generating anchor points,
+making it easy to explore experimental letterforms, shapes,
+and figures in a wide range of variations.
 
 ---
 
-## 1. Install Node
+# Generative Typography
+
+The course explores how creative coding can be used to manipulate,
+transform, and animate typography beyond traditional static layouts.
+
+Through research into existing projects, tools, and algorithms, 
+students discover the possibilities of generative design. Working in 
+groups, they develop their own experimental typography tools using p5.js,
+with a focus on visual exploration, iteration, and unexpected results.
+
+AI-assisted coding supports the process while encouraging critical
+reflection on its impact on creativity and design.
+
+---
+
+# Controls
+
+Click a cell        Add an anchor there (it goes to the end of the order),
+                    or remove the anchor that is already there.
+Drag an anchor      Move it around the grid. When you let go, it jumps
+                    to the centre of the cell you drop it in.
+Click an anchor     (without dragging) remove it.
+Single / Multiple   In the Modes section: one drawing in the middle, or
+                    several iterations at once (Per Row sets how many).
+                    The first one (top left) is always your drawing from
+                    Single view. Every other iteration joins the anchors
+                    in its own order and picks its own Drift and Speed;
+                    the grid, the anchor positions, the style and the
+                    colors stay yours.
+                    In Multiple, a click on one iteration saves it to the
+                    library; Save Iteration saves the whole sheet.
+Double-click a name In the control panel: put that setting back to where
+                    it started.
+
+Randomize All       New grid, anchors, spline, colors, gradient, drift and
+                    speed at once. In 'Glyph' it also types a new text of
+                    1 to 3 characters.
+
+Iterate             Keep the same cells, connect them in a new order.
+Clear / Restore     Remove every anchor. In 'Glyph' it is called Restore
+                    and brings back the anchors of the text instead.
+
+Modes: Glyph | Shape | Animation
+                    'Glyph' uses the anchor points of the text, read from the font file.
+                    'Shape' uses the grid anchors above.
+                    'Animation' is like 'Shape', but anchors, shapes and lines also grow and shrink.
+
+Invert              The switch next to the Modes headline: light becomes
+                    dark and dark becomes light, in the panels and in the
+
+Shortcuts
+
+Space – Pause / Play  
+S – Save Iteration
+R – Randomize All
+C – Reset All
+← / → – Iterate Anchors
+T – Open / Close Controls
+H – Hide Guides
+G – Hide UI
+
+---
+
+## Annotations
 
 Code in this project runs through a program called **Node**.
 
-1. Go to [nodejs.org](https://nodejs.org) and download the version marked
-   **LTS**.
-2. Run the installer and click through it.
-3. **If Visual Studio Code is open, quit it and open it again.** It only
-   notices Node on startup.
-
-You only ever do this once, not once per project.
-
-## 2. Open the project
-
-Open Visual Studio Code, then **File → Open Folder…** and choose this project's
-folder.
-
-Make sure you open the folder _itself_ — the one containing `package.json` —
-not the folder above it.
-
-## 3. Open a terminal
-
-The terminal is where you type commands to the computer.
-
-In VS Code: **Terminal → New Terminal** from the menu bar. The shortcut is
-shown next to it in the menu (on a US keyboard <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>`</kbd>).
-
-A panel opens at the bottom of the window. That's it.
-
-## 4. Install and run
-
-Type this into the terminal and press Enter:
-
-```
-npm install
-```
-
-This downloads the things the project needs. It takes a minute or two the
-first time and prints a lot of text. That's normal. You only do this once.
-
-Then:
-
-```
-npm run dev
-```
-
-Your browser opens at `localhost:8080` and you should see the sketch, with a
-control panel in the corner.
-
-**Leave the terminal running.** As long as it is, every time you save a file
-the browser updates by itself. To stop it, click the terminal and press
-<kbd>Ctrl</kbd> + <kbd>C</kbd>.
-
----
-
-## Using it
-
-### The controls
-
-| Control        | What it does                                             |
-| -------------- | -------------------------------------------------------- |
-| **text**       | The words on screen. Click the field and type.           |
-| **font**       | Pick from the fonts in your `fonts/` folder.             |
-| **size**       | How big the type is.                                     |
-| **type color** | The color of the letters. Click the swatch for a picker. |
-| **background** | The color behind them.                                   |
-| **Export PNG** | Saves the canvas as an image.                            |
-
-Not every template has all of these, and each one adds its own controls below
-them.
-
-| Key          | What it does                   |
-| ------------ | ------------------------------ |
-| <kbd>s</kbd> | Save the drawing to the library |
-| <kbd>g</kbd> | Hide or show the control panel |
-| <kbd>Space</kbd> | Pause or resume the animation |
-| <kbd>r</kbd> | Restart the animation |
-| <kbd>c</kbd> | Reset every setting to how the sketch opens |
-| <kbd>t</kbd> | Close every folder in the panel, or open them all again |
-
-Press <kbd>g</kbd> before taking a screenshot to get the canvas on its own.
-In the What Da Font Generator, click **Glyph** in the Modes folder at the top
-of the panel to build the animation from the selected font and text outline, or
-**Shape** to place anchors on the grid yourself. **Animation** works like
-Shape, but old lines slowly fade away, so the drawing keeps moving instead of
-filling up the grid.
-
-### Adding your own fonts
-
-Drop font files into the **`fonts/`** folder. They appear in the dropdown
-straight away — there's no list to update.
-
-Use **`.otf` or `.ttf`** — those are the formats p5 loads properly. A `.woff2`
-shows up in the dropdown but may not render.
-
-The dropdown shows the filename without the extension, so `Grotesk-Bold.otf`
-becomes **Grotesk-Bold**.
-
-If a font you just added doesn't show up: stop the dev server
-(<kbd>Ctrl</kbd> + <kbd>C</kbd>) and run `npm run dev` again.
-
-### Your project settings
-
-Open **`src/config.js`**. It holds what the sketch starts with:
-
-- `screenshotName` is the name your exported images get.
-- `startingFont` is the font it opens with, so you are not picking it from the
-  dropdown every time you reload. Write it exactly as it appears in the
-  dropdown, which is the filename without `.otf` or `.ttf`.
-- `startingText` is the words it opens with.
-- `projectTitle` and `projectSubtitle` are the name and the short line in the
-  title bar across the top, and at the bottom of the library.
-- `backgroundColor`, `foregroundColor` and `accentColor` are the starting
-  colors. The accent is the color of the guides: the lines between anchors,
-  the anchor points and their numbers.
-
-Some templates add their own settings here, like `gridSize` in the grid
-template.
-
-Exported images are named after `screenshotName`, plus the date and time, so
-`my-poster` becomes `my-poster-260921-1408.png`. Two exports never overwrite
-each other.
-
-Colors are written as **r, g, b** — red, green and blue, each from 0 to 255.
-So `{ r: 255, g: 0, b: 0 }` is red, and `{ r: 255, g: 255, b: 255 }` is white.
-The color pickers in the panel change them while the sketch runs; these are
-just the starting values.
-
-### Saving stills
-
-Press <kbd>s</kbd> or click **Save Iteration** to keep the drawing in the library
-on the left. Select it there and click **PNG** or **SVG**; the file
-lands in your **Downloads** folder.
-
-### Recording motion
-
-There is no record button, on purpose — screen recording is simpler and gives
-you better results than anything built into the sketch.
-
-- **macOS** — press <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>5</kbd>, choose
-  _Record Selected Portion_, drag a box around the canvas, click **Record**.
-  Press <kbd>g</kbd> first to hide the panel.
-- **Windows** — press <kbd>Win</kbd> + <kbd>G</kbd> for the Game Bar, or install
-  [OBS](https://obsproject.com).
-- **Either** — [OBS](https://obsproject.com) is free and gives you the most
-  control if you want higher quality.
-
----
-
 ## p5 version 2
 
-This project uses p5.js **version 2**. Many tutorials online are for version 1.
-Almost everything works the same. If you see `preload()`, that is version 1
-and won't work here. When you ask an AI for help, tell it you use p5.js 2.0.
-When in doubt, check the [p5.js reference](https://p5js.org/reference/).
+This project uses p5.js **version 2**. 
 
-You don't need any loading code for fonts: drop them into `fonts/` and pick
-them in the panel.
+## Licences
 
-## Writing your own code
-
-Everything you write goes in **`src/sketch.js`**. It's the only file you need
-to open, and it's commented throughout.
-
-Two functions do the work:
-
-- `setup()` runs **once**, at the start.
-- `draw()` runs about **60 times a second**, forever. Animation lives here.
-
-Every p5 function, with examples, is in the
-[p5.js reference](https://p5js.org/reference/).
-
-To add your own control to the panel, add a value to `uiParams` in
-`src/sketch.js`, then add one line in `addControls()` at the bottom of that
-file. There are examples in the comments at the top of `src/lib/gui.js`.
-The panel is made with [lil-gui](https://lil-gui.georgealways.com); its
-documentation shows every kind of control you can add.
-
-The sketch runs in p5's **global mode**, which means you write `background()`
-and `width` exactly as you would in Processing or any p5 tutorial, with no
-prefix. One catch: don't name a variable after a p5 function. A local called
-`background` hides `background()` and the next call to it will fail.
-
-`src/lib/` is the rest of the tool: the control panel, font loading, image
-export and easing. You do not need it on day one, but it is yours to change,
-and building the tool means changing it.
-
-### Easing
-
-`src/lib/easings.js` gives you about thirty ways to move between two values —
-slow starts, sharp stops, overshoots, bounces. Movement that uses one almost
-always looks better than movement that doesn't.
-
-```js
-import { Easings } from './lib/easings.js';
-
-const t = (frameCount % 120) / 120; // 0 -> 1, over 2 seconds
-const eased = Easings.cubicInOut(t);
-textSize(lerp(20, 200, eased));
-```
-
-The file's comments explain it properly, and [easings.net](https://easings.net)
-draws every curve so you can see what you're picking.
-
----
-
-## Something's broken
-
-**`npm: command not found`** — Node isn't installed, or VS Code was open while
-you installed it. Quit VS Code, reopen it, try again.
-
-**The browser shows a blank page** — look at the terminal. Errors there usually
-name the file and line. Also open the browser's console
-(Mac: <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>J</kbd>, Windows:
-<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd>).
-
-**A font doesn't load** — check the file really is `.otf` or `.ttf`, and
-restart `npm run dev`. If it appears in the dropdown but the type still looks
-like plain Helvetica, open the browser console: the font failed to load and the
-sketch fell back to the system font.
-
-**Nothing updates when I save** — the dev server probably stopped. Check the
-terminal and run `npm run dev` again.
-
-## Project structure
-
-```
-fonts/              <- your font files go here
-src/
-  sketch.js         <- your code
-  config.js         <- screenshot name and starting colors
-  lib/              <- the tool itself: panel, fonts, export, easing
-static/             <- images and other files used as-is
-```
-
-Credits and licences for the libraries used are in [LICENSES.md](LICENSES.md).
+Licences for the libraries used are in [LICENSES.md](LICENSES.md).
