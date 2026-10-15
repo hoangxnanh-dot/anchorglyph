@@ -28,7 +28,7 @@ import GUI from 'lil-gui';
 import { fontOptions } from './font/fonts.js';
 import { savePNG } from './export.js';
 import { Easings } from './easings.js';
-import { EYE_OPEN_ICON, EYE_CLOSED_ICON, RANDOMIZE_ICON } from './icons.js';
+import { EYE_OPEN_ICON, EYE_CLOSED_ICON, RANDOMIZE_ICON, dotGridIcon } from './icons.js';
 import { projectTitle, projectSubtitle } from '../config.js';
 
 // How long a slider takes to glide back to its starting value after a
@@ -38,6 +38,10 @@ const RESET_DURATION = 400;
 // the handle, in pixels on either side. The handle itself is only 2 pixels
 // wide, too thin to hit exactly.
 const HANDLE_REACH = 6;
+// How many dots across and down the project's mark next to its name has,
+// and how wide it is in pixels (see createProjectFooter()).
+const FOOTER_MARK_DOTS = 3;
+const FOOTER_MARK_SIZE = 40;
 // The range of the Size slider for the text, in pixels. Below 150 a letter
 // shrinks into a few grid cells and stops reading as a letter; at 900 a
 // single letter fills the grid (longer words fill it much earlier).
@@ -378,18 +382,24 @@ export function setButtonIcon(button, icon, label) {
   button.setAttribute('aria-label', label);
 }
 
-// The project's name with its subtitle below it, from src/config.js, as at
-// the bottom of the library and of the start screen. `className` places it.
-export function createProjectName(className) {
-  const block = document.createElement('div');
-  block.className = className;
+// The project's mark, and next to it its name with the subtitle below, from
+// src/config.js: at the bottom of the library and of the start screen, the
+// same in both. `className` places it; the look is in index.html, under
+// "the project's mark and name".
+export function createProjectFooter(className) {
+  const footer = document.createElement('div');
+  footer.className = `project-footer ${className}`;
+  footer.innerHTML = dotGridIcon(FOOTER_MARK_DOTS, FOOTER_MARK_SIZE);
+  const text = document.createElement('div');
+  text.className = 'project-footer-text';
   const name = document.createElement('div');
   name.textContent = projectTitle;
   const subtitle = document.createElement('div');
   subtitle.className = 'project-subtitle';
   subtitle.textContent = projectSubtitle;
-  block.append(name, subtitle);
-  return block;
+  text.append(name, subtitle);
+  footer.appendChild(text);
+  return footer;
 }
 
 // A name with a small on/off switch next to it, like Invert:

@@ -229,20 +229,36 @@
          the library and in the large preview */
       .top-bar-brand,
       .top-bar-subtitle,
-      .start-project-name,
       .start-mode-label,
       .stage-label,
-      .library-footer,
+      .project-footer,
       .library-preview-labels {
         font-family: var(--label-font);
         font-size: var(--label-size);
         letter-spacing: calc(var(--label-tracking) + var(--text-tracking));
         text-transform: uppercase;
       }
-      /* the project's name with its subtitle below it, made by
-         createProjectName() in src/lib/gui.js */
-      .start-project-name,
-      .library-project-name {
+      /* THE PROJECT'S MARK AND NAME at the bottom left, the same on the
+         start screen and at the bottom of the library: the dots, and next
+         to them the name with the subtitle below it. Made by
+         createProjectFooter() in src/lib/gui.js. Both sit
+         --footer-bottom-gap above the window's bottom edge. The library's
+         is the panel's padding in from the left edge, the start screen's
+         is --start-margin in, in line with the headline. */
+      :root {
+        --footer-bottom-gap: 24px;
+      }
+      .project-footer {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        color: var(--ink-color);
+      }
+      .project-footer svg {
+        flex-shrink: 0;
+        color: var(--label-color);
+      }
+      .project-footer-text {
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -251,9 +267,10 @@
         color: var(--muted-color);
       }
 
-      /* THE TITLE BAR across the top: the project's mark and name on the
-         left, the title of the middle in the middle, the subtitle on the
-         right. Its texts are in src/config.js. */
+      /* THE TITLE BAR across the top: the project's name on the left, the
+         title of the middle in the middle, the subtitle on the
+         right, and at each end the button that folds the panel below it
+         away. Its texts are in src/config.js. */
       .top-bar {
         position: fixed;
         top: 0;
@@ -270,12 +287,80 @@
         border-bottom: 1px solid var(--line-color);
         color: var(--ink-color);
       }
-      /* the mark and the name: a button back to the start screen */
-      .top-bar-brand {
-        justify-self: start;
+      /* the two ends: each keeps its own column, also when the title in
+         the middle is left out on a phone */
+      .top-bar-start,
+      .top-bar-end {
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: var(--panel-button-gap);
+      }
+      .top-bar-start {
+        grid-column: 1;
+        justify-self: start;
+      }
+      .top-bar-end {
+        grid-column: 3;
+        justify-self: end;
+      }
+      /* the buttons that fold the library and the control panel away: only
+         an icon, grey until the mouse is over it. They stick out by
+         --panel-button-inset on the outside, so the icon itself lines up
+         with the text in the panel below. --panel-button-gap is the room
+         between a button and the name or the subtitle next to it. */
+      .top-bar {
+        --panel-button-size: 32px;
+        --panel-button-inset: 8px;
+        --panel-button-gap: 14px;
+      }
+      .ui-button.top-bar-panel-button {
+        width: var(--panel-button-size);
+        height: var(--panel-button-size);
+        padding: 0;
+        background: none;
+        color: var(--label-color);
+      }
+      .top-bar-start .top-bar-panel-button {
+        margin-left: calc(-1 * var(--panel-button-inset));
+      }
+      .top-bar-end .top-bar-panel-button {
+        margin-right: calc(-1 * var(--panel-button-inset));
+      }
+      /* On the start screen the buttons are hidden, and the name and the
+         subtitle sit --start-margin in from the window's edges, in line
+         with the headline. Once a mode is picked they move in to make room
+         while the start screen fades out, and the buttons fade in after,
+         into the room that is free. On the way back the buttons fade out
+         first, then the name and the subtitle move out. They move with the
+         start screen, so they take its delay.
+         --start-shift is how far they move: from where they are with the
+         buttons (the padding plus the button's room) to the start margin. */
+      .top-bar-start .top-bar-brand,
+      .top-bar-end .top-bar-subtitle {
+        --panel-button-room: calc(var(--panel-button-size) - var(--panel-button-inset) + var(--panel-button-gap));
+        --start-shift: calc(var(--panel-padding) + var(--panel-button-room) - var(--start-margin));
+        transition: transform var(--fade-duration) ease-in-out var(--start-screen-delay);
+      }
+      body.is-starting .top-bar-start .top-bar-brand {
+        transform: translateX(calc(-1 * var(--start-shift)));
+      }
+      body.is-starting .top-bar-end .top-bar-subtitle {
+        transform: translateX(var(--start-shift));
+      }
+      /* while its panel is open, the button sits on light grey, like a
+         switched-on button */
+      .ui-button.top-bar-panel-button[aria-expanded='true'] {
+        background: var(--button-color);
+        color: var(--ink-color);
+      }
+      .ui-button.top-bar-panel-button:hover {
+        background: var(--button-hover-color);
+        color: var(--ink-color);
+      }
+      /* the name: a button back to the start screen */
+      .top-bar-brand {
+        display: flex;
+        align-items: center;
         padding: 6px 0;
         border: none;
         background: none;
@@ -290,18 +375,15 @@
         outline-offset: 4px;
         border-radius: var(--radius);
       }
-      .top-bar-brand svg {
-        color: var(--label-color);
-      }
       /* the same size as the Library and Modes headlines */
       .top-bar-title {
+        grid-column: 2;
         font-family: var(--title-font);
         font-size: var(--headline-size);
         font-weight: 500;
         letter-spacing: calc(var(--headline-tracking) + var(--text-tracking));
       }
       .top-bar-subtitle {
-        justify-self: end;
         color: var(--muted-color);
       }
 
@@ -330,13 +412,15 @@
       .library,
       .lil-gui.lil-root,
       .stage-frame,
-      .top-bar-title {
+      .top-bar-title,
+      .top-bar-panel-button {
         transition: opacity var(--fade-duration) ease var(--main-screen-delay);
       }
       body.is-starting .library,
       body.is-starting .lil-gui.lil-root,
       body.is-starting .stage-frame,
-      body.is-starting .top-bar-title {
+      body.is-starting .top-bar-title,
+      body.is-starting .top-bar-panel-button {
         opacity: 0;
         pointer-events: none;
       }
@@ -365,10 +449,17 @@
         flex: 1;
         pointer-events: none;
       }
+      /* how far the headline, the name and subtitle in the title bar, the
+         project's mark at the bottom and the mode cards sit in from the
+         window's edges on the start screen: the same as the panels'
+         padding, so the start screen and the main screen line up */
+      :root {
+        --start-margin: var(--panel-padding);
+      }
       .start-headline {
         position: absolute;
         top: 40px;
-        left: 40px;
+        left: var(--start-margin);
         font-family: var(--heading-font);
         font-size: clamp(44px, 5vw, 84px);
         font-weight: 700;
@@ -377,11 +468,10 @@
         /* the \n in the text starts a new line */
         white-space: pre-line;
       }
-      .start-project-name {
+      .start-footer {
         position: absolute;
-        left: 40px;
-        bottom: 36px;
-        color: var(--muted-color);
+        left: var(--start-margin);
+        bottom: var(--footer-bottom-gap);
       }
       /* the right part: the cards at the bottom, below each other */
       .start-modes {
@@ -390,21 +480,24 @@
         flex-direction: column;
         justify-content: flex-end;
         gap: 14px;
-        padding: 16px 16px 56px;
+        padding: 16px var(--start-margin) 56px;
         background: var(--page-color);
         border-left: 1px solid var(--line-color);
         transition: transform var(--fade-duration) ease var(--start-screen-delay);
       }
       /* Invert and Anchors at the top of the card column, on the right,
          below each other, with their switches lined up on the right.
-         Invert sits at the height of the panel's Invert switch. The cards
-         sit at the bottom. */
+         Invert sits exactly where the panel's Invert switch is. The panel
+         keeps room for its scrollbar on the right (--switch-scrollbar-room,
+         as wide as lil-gui's --scrollbar-width), so these keep the same
+         room. The cards sit at the bottom. */
       .start-switches {
+        --switch-scrollbar-room: 6px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
         gap: 6px;
-        margin: 4px 18px auto;
+        margin: 4px var(--switch-scrollbar-room) auto;
       }
       /* the cards slide a little to the right as they fade out, and back
          as they come in again */
@@ -1109,17 +1202,65 @@
         background: var(--card-color);
       }
 
-      /* the project's mark, name and subtitle at the bottom of the library */
+      /* the project's mark, name and subtitle at the bottom of the library
+         (see "the project's mark and name") */
       .library-footer {
         margin-top: auto;
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding: 20px var(--panel-padding) 24px;
+        padding: 20px var(--panel-padding) var(--footer-bottom-gap);
       }
-      .library-footer svg {
-        flex-shrink: 0;
-        color: var(--label-color);
+
+      /* FOLDED PANELS: the buttons at the ends of the title bar slide the
+         library out to the left and the control panel out to the right
+         (see src/lib/panels.js), and back in. The grid glides along into
+         the middle of the room that is left. Once a panel is out of sight
+         it also turns invisible, so the Tab key skips what is in it; when
+         it comes back it is visible straight away, before it slides in. */
+      :root {
+        --fold-duration: 450ms;
+        /* fast at first, then slowing down gently, like the library's cards */
+        --fold-easing: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .library,
+      .lil-gui.lil-root {
+        transition:
+          opacity var(--fade-duration) ease var(--main-screen-delay),
+          transform var(--fold-duration) var(--fold-easing),
+          visibility 0s;
+      }
+      body.is-library-folded .library {
+        transform: translateX(-100%);
+      }
+      body.is-controls-folded .lil-gui.lil-root {
+        transform: translateX(100%);
+      }
+      body.is-library-folded .library,
+      body.is-controls-folded .lil-gui.lil-root {
+        visibility: hidden;
+        transition:
+          opacity var(--fade-duration) ease var(--main-screen-delay),
+          transform var(--fold-duration) var(--fold-easing),
+          visibility 0s linear var(--fold-duration);
+      }
+
+      /* NARROW WINDOWS: a phone, or a tablet held upright (src/lib/panels.js
+         decides and sets is-narrow). The panels lie over the drawing there,
+         so a soft shadow sets them apart from it. */
+      body.is-narrow .library {
+        box-shadow: 8px 0 24px rgb(0 0 0 / 0.08);
+      }
+      body.is-narrow .lil-gui.lil-root {
+        box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
+      }
+      /* On a phone the title bar only has room for the two buttons and the
+         name, and the panels need less room around their contents. */
+      @media (max-width: 640px) {
+        :root {
+          --panel-padding: 16px;
+        }
+        .top-bar-title,
+        .top-bar-subtitle {
+          display: none;
+        }
       }
 
       /* the flash when saving: the accent color over the whole window,

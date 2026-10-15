@@ -99,6 +99,7 @@ import {
   makeButton, makeIconButton, setButtonIcon,
 } from './lib/gui.js';
 import { createLibrary } from './lib/library.js';
+import { createPanelButtons } from './lib/panels.js';
 import { gridSize, backgroundColor, foregroundColor, accentColor, startingText, projectTitle, projectSubtitle } from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
@@ -106,7 +107,7 @@ import { traceOutlines, outlinesToPathData } from './lib/trace.js';
 import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
-  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, dotGridIcon,
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON,
 } from './lib/icons.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
@@ -448,6 +449,9 @@ let videoExport = null;
 // panel controls the code changes or hides after they are made.
 let panel;
 let library;
+// The buttons in the title bar that fold the panels away, see
+// src/lib/panels.js.
+let panelButtons;
 // The title bar across the top of the window, see createTopBar(), and how
 // tall it is. The height is measured once: a hidden bar measures 0.
 let topBar;
@@ -1783,15 +1787,32 @@ function drawAnchorShape(anchor, x, y) {
 }
 
 // Where the grid starts. It sits in the middle of the space between the
-// library on the left and the control panel on the right. Hidden panels
-// (g key) are 0 wide, so the grid moves back to the middle of the window.
-// On the start screen it sits in the middle of the start screen's left
-// part, and glides over from there once a mode is picked.
+// library on the left and the control panel on the right. Folded panels
+// (the buttons in the title bar) and hidden ones (g key) leave room, so the
+// grid moves towards the middle of the window, gliding along as a panel
+// slides away. On a narrow window the panels lie over the drawing, so the
+// grid stays in the middle of the window. On the start screen it sits in
+// the middle of the start screen's left part, and glides over from there
+// once a mode is picked.
 function gridLeft() {
-  const leftSide = library ? library.element.offsetWidth : 0;
-  const rightSide = panel ? panel.domElement.offsetWidth : 0;
+  const besidePanels = panelButtons && !panelButtons.isNarrow();
+  const leftSide = library && besidePanels ? coveredFromLeft(library.element) : 0;
+  const rightSide = panel && besidePanels ? coveredFromRight(panel.domElement) : 0;
   const mainLeft = leftSide + (width - leftSide - rightSide - gridSize) / 2;
   return lerp(mainLeft, startGridLeft, startScreenAmount);
+}
+
+// How far a panel reaches into the window from the left or right edge: all
+// of its width while it is open, less while it slides away, nothing once it
+// is folded. A hidden panel (g key) measures 0 wide, so it covers nothing.
+function coveredFromLeft(element) {
+  const box = element.getBoundingClientRect();
+  return constrain(box.right, 0, box.width);
+}
+
+function coveredFromRight(element) {
+  const box = element.getBoundingClientRect();
+  return constrain(width - box.left, 0, box.width);
 }
 
 // The grid sits in the middle of the room below the title bar. It keeps
@@ -2827,10 +2848,12 @@ function showColorTheme() {
   if (startScreen) startScreen.updateSwitches();
 }
 
-// The title bar across the top of the window: the project's mark and name
-// on the left (a click on them goes back to the start screen), the title
-// of the middle section in the middle, and the subtitle on the right. The texts are projectTitle and projectSubtitle in
-// src/config.js; the look is in index.html, under "the title bar".
+// The title bar across the top of the window: the project's name on the
+// left (a click on it goes back to the start screen), the title
+// of the middle section in the middle, and the subtitle on the right. At
+// each end sits the button that folds the panel below it away. The texts
+// are projectTitle and projectSubtitle in src/config.js; the look is in
+// index.html, under "the title bar".
 function createTopBar() {
   const bar = document.createElement('header');
   bar.className = 'top-bar';
@@ -2839,8 +2862,7 @@ function createTopBar() {
   const brand = document.createElement('button');
   brand.className = 'top-bar-brand';
   brand.title = 'Back to the start';
-  brand.innerHTML = dotGridIcon();
-  brand.append(projectTitle);
+  brand.textContent = projectTitle;
   brand.addEventListener('click', returnHome);
 
   const title = document.createElement('div');
@@ -2851,7 +2873,18 @@ function createTopBar() {
   subtitle.className = 'top-bar-subtitle';
   subtitle.textContent = projectSubtitle;
 
-  bar.append(brand, title, subtitle);
+  // the two ends of the bar: the library's button and the name on the left,
+  // the subtitle and the control panel's button on the right. On the start
+  // screen the buttons are hidden and the name and the subtitle move out
+  // to the edges (see index.html).
+  const start = document.createElement('div');
+  start.className = 'top-bar-start';
+  start.append(panelButtons.library, brand);
+  const end = document.createElement('div');
+  end.className = 'top-bar-end';
+  end.append(subtitle, panelButtons.controls);
+
+  bar.append(start, title, end);
   document.body.appendChild(bar);
   return bar;
 }
@@ -2924,6 +2957,7 @@ document.documentElement.style.setProperty(
 // Builds the control panel and the library, then starts p5. p5 looks for
 // the setup() and draw() you defined above and runs them.
 library = createLibrary({ capture: captureVariation, apply: applyVariation });
+panelButtons = createPanelButtons();
 topBar = createTopBar();
 topBarHeight = topBar.offsetHeight;
 stageFrame = createStageFrame();

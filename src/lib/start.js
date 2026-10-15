@@ -30,7 +30,7 @@
 // screen".
 
 import { ARROW_ICON } from './icons.js';
-import { createSwitchButton, createProjectName } from './gui.js';
+import { createSwitchButton, createProjectFooter } from './gui.js';
 
 // How long the change to the main screen takes, in milliseconds. The sketch
 // reads it too, so the drawing glides exactly as long as the fade.
@@ -52,7 +52,7 @@ export function createStartScreen({ modes, startingMode, onPreview, onChoose, sw
   const headline = document.createElement('h1');
   headline.className = 'start-headline';
   headline.textContent = HEADLINE;
-  stage.append(headline, createProjectName('start-project-name'));
+  stage.append(headline, createProjectFooter('start-footer'));
 
   // the right part: one card per mode, numbered like "Mode // 01"
   const cardList = document.createElement('div');

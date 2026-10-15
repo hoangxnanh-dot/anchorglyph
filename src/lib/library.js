@@ -56,7 +56,7 @@
 
 import { screenshotName, variationName, variationDigits } from '../config.js';
 import { saveToDownloads, timestamp } from './export.js';
-import { makeButton, makeIconButton, createProjectName } from './gui.js';
+import { makeButton, makeIconButton, createProjectFooter } from './gui.js';
 import {
   ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
 } from './icons.js';
@@ -104,11 +104,6 @@ const PNG_RESOLUTIONS = [
   { name: 'High', size: 2400, starting: true },
   { name: 'MAXX', size: 5000 },
 ];
-
-// How many dots across and down the project's mark at the bottom of the
-// library has, and how wide it is in pixels.
-const FOOTER_MARK_DOTS = 3;
-const FOOTER_MARK_SIZE = 40;
 
 export function createLibrary({ capture, apply }) {
   // Earlier versions kept the library in the browser's storage. That space
@@ -191,10 +186,7 @@ export function createLibrary({ capture, apply }) {
   list.className = 'library-list';
 
   // the project's mark, name and subtitle at the bottom of the library
-  const footer = document.createElement('div');
-  footer.className = 'library-footer';
-  footer.innerHTML = dotGridIcon(FOOTER_MARK_DOTS, FOOTER_MARK_SIZE);
-  footer.appendChild(createProjectName('library-project-name'));
+  const footer = createProjectFooter('library-footer');
 
   panel.append(title, saveButton, selectionActions, selectedActions, divider, emptyMessage, list, footer);
   document.body.appendChild(panel);
