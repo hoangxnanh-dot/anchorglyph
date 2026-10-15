@@ -413,14 +413,16 @@
       .lil-gui.lil-root,
       .stage-frame,
       .top-bar-title,
-      .top-bar-panel-button {
+      .top-bar-panel-button,
+      .dock {
         transition: opacity var(--fade-duration) ease var(--main-screen-delay);
       }
       body.is-starting .library,
       body.is-starting .lil-gui.lil-root,
       body.is-starting .stage-frame,
       body.is-starting .top-bar-title,
-      body.is-starting .top-bar-panel-button {
+      body.is-starting .top-bar-panel-button,
+      body.is-starting .dock {
         opacity: 0;
         pointer-events: none;
       }
@@ -568,13 +570,15 @@
       /* THE LABELS AROUND THE GRID: small capitals above and below its
          corners, and a + beyond each corner, like on a drawing board.
          src/sketch.js moves them to where the grid is. */
-      /* exactly as big as the grid; src/sketch.js sets --grid-size */
+      /* exactly as big as the grid on screen; src/sketch.js sets
+         --shown-grid-size (smaller than --grid-size when the window is too
+         small for the grid) */
       .stage-frame {
         position: fixed;
         top: 0;
         left: 0;
-        width: var(--grid-size);
-        height: var(--grid-size);
+        width: var(--shown-grid-size, var(--grid-size));
+        height: var(--shown-grid-size, var(--grid-size));
         /* above the drawing, below the save flash and the panels */
         z-index: 999;
         /* clicks go through to the canvas below */
@@ -1272,6 +1276,51 @@
       body.is-narrow .lil-gui.lil-root {
         box-shadow: -8px 0 24px rgb(0 0 0 / 0.08);
       }
+      /* The + marks beyond the grid's corners would fall off the window
+         when the grid fills its width. A drag on the canvas moves an anchor,
+         instead of scrolling or zooming the page. */
+      body.is-narrow .stage-mark {
+        display: none;
+      }
+      body.is-narrow canvas {
+        touch-action: none;
+      }
+
+      /* THE DOCK below the grid on narrow windows (see createDock() in
+         src/sketch.js): the loop bar, then six buttons in a grid of three
+         across and two down. It is as wide as the grid on screen and sits
+         in the middle; src/sketch.js sets how far down (fitView()). On
+         wide windows it isn't there: the panels have the same buttons. */
+      .dock {
+        display: none;
+      }
+      body.is-narrow .dock {
+        position: fixed;
+        left: 50%;
+        /* above the drawing, below the panels, which lie over it */
+        z-index: 999;
+        width: var(--shown-grid-size);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        transform: translateX(-50%);
+      }
+      /* the loop bar takes the whole width, centred under the grid */
+      .dock .panel-progress {
+        flex: none;
+        margin: 0;
+      }
+      .dock-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .dock-buttons .ui-button {
+        height: var(--large-button-height);
+        padding: 0 8px;
+        border-radius: var(--large-radius);
+      }
+
       /* On a phone the title bar only has room for the two buttons and the
          name, and the panels need less room around their contents. */
       @media (max-width: 640px) {

@@ -107,7 +107,7 @@ import { traceOutlines, outlinesToPathData } from './lib/trace.js';
 import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
-  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON,
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON,
 } from './lib/icons.js';
 
 // The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
@@ -380,10 +380,23 @@ const SVG_FULL_OPACITY = 255;
 // Full opacity, for the parts of the guides that are otherwise solid.
 const SOLID = 255;
 
-// How close (in pixels) the mouse has to be to an anchor to grab it, and how
-// far it has to move before a click counts as a drag.
+// How close (in pixels on screen) the mouse has to be to an anchor to grab
+// it, and how far it has to move before a click counts as a drag.
 const GRAB_RADIUS = 10;
 const DRAG_THRESHOLD = 3;
+
+// The grid shrinks when the window is too small for it (see fitView()).
+// This much room, in pixels on screen, stays free above and below the grid
+// for its labels, and on a narrow window this much more between the labels
+// below the grid and the dock.
+const STAGE_LABEL_ROOM = 26;
+const DOCK_GAP = 6;
+// The most pixels the canvas may have on a phone or tablet. iPhones and
+// iPads don't draw a larger canvas at all (4096 × 4096). A small screen
+// shows a large canvas shrunk, so there the canvas gets a little less sharp
+// to stay below this. Computers draw far larger canvases, so they always
+// get the full sharpness.
+const MAX_TOUCH_CANVAS_PIXELS = 4096 * 4096;
 
 // The anchors, in the order the spline visits them.
 // Each one: { row, column, jx, jy, fx, fy, dx, dy, noise, heading, restlessness, phase }
@@ -475,7 +488,17 @@ const startGuides = { showGrid: false, showAnchors: false };
 // start screen's left part. Measured while the start screen shows, see
 // updateStartTransition().
 let startGridLeft = 0;
-let playbackControls;
+// Restart, Play/Pause, Stop and the loop bar: one set in the control panel
+// and one in the dock, kept the same (see createPlaybackControls()).
+const playbackControls = [];
+// The dock below the grid on narrow windows, see createDock().
+let dock;
+// How the grid is shown, see fitView(). `scale` is how big one pixel of
+// the sketch is on screen: 1 when the grid fits at its real size, less
+// when the window is too small. `gridTop` is where the grid starts, in the
+// sketch's pixels. `libraryWidth` and `controlsWidth` are the panels'
+// widths, as last measured.
+const view = { scale: 1, gridTop: 0, libraryWidth: 0, controlsWidth: 0 };
 let anchorModeController;
 let glyphControllers = [];
 let columnsController;
@@ -496,10 +519,9 @@ let invertSwitch;
 
 window.setup = async function setup() {
   createCanvas(windowWidth, windowHeight);
-  // at least as many canvas pixels as ink pixels, also on screens that
-  // aren't Retina, so the saved picture keeps the ink's full detail
-  pixelDensity(max(pixelDensity(), INK_SCALE));
   ink = newInkLayer(INK_SCALE);
+  // the canvas's size and sharpness, and the grid's size and place
+  fitView();
   // always the starting font from src/config.js: the panel has no font picker
   selectedFont = await applyFont(defaultFont);
   // the starting mode decides where the first anchors come from
@@ -613,7 +635,9 @@ function anchorsMovedBy(savedAnchors, moves) {
 // works out how far that has come: slow at first, fast in the middle, slow
 // at the end (cubicInOut).
 function updateStartTransition() {
-  if (startScreenAmount > 0 || startTransition) startGridLeft = (startScreen.stageWidth() - gridSize) / 2;
+  // the start screen measures its width on screen; the grid is placed in
+  // the sketch's pixels (see fitView())
+  if (startScreenAmount > 0 || startTransition) startGridLeft = (startScreen.stageWidth() / view.scale - gridSize) / 2;
   if (!startTransition) return;
   const { from, to, startTime } = startTransition;
   const progress = constrain((millis() - startTime) / START_TRANSITION_DURATION, 0, 1);
@@ -1796,8 +1820,10 @@ function drawAnchorShape(anchor, x, y) {
 // once a mode is picked.
 function gridLeft() {
   const besidePanels = panelButtons && !panelButtons.isNarrow();
-  const leftSide = library && besidePanels ? coveredFromLeft(library.element) : 0;
-  const rightSide = panel && besidePanels ? coveredFromRight(panel.domElement) : 0;
+  // the panels are measured on screen; the grid is placed in the sketch's
+  // pixels (see fitView())
+  const leftSide = library && besidePanels ? coveredFromLeft(library.element) / view.scale : 0;
+  const rightSide = panel && besidePanels ? coveredFromRight(panel.domElement) / view.scale : 0;
   const mainLeft = leftSide + (width - leftSide - rightSide - gridSize) / 2;
   return lerp(mainLeft, startGridLeft, startScreenAmount);
 }
@@ -1815,11 +1841,12 @@ function coveredFromRight(element) {
   return constrain(width - box.left, 0, box.width);
 }
 
-// The grid sits in the middle of the room below the title bar. It keeps
-// that room when the title bar is hidden (g key), so the grid doesn't jump
-// when the UI disappears.
+// The grid sits in the middle of the room below the title bar, or on a
+// narrow window above the dock; fitView() works it out. It keeps that room
+// when the title bar is hidden (g key), so the grid doesn't jump when the
+// UI disappears.
 function gridTop() {
-  return topBarHeight + (height - topBarHeight - gridSize) / 2;
+  return view.gridTop;
 }
 
 // How far the grid's top edge is pushed right for every pixel it sits above
@@ -1858,7 +1885,8 @@ function anchorUnderMouse() {
   if (!uiParams.showAnchors || isMultipleView()) return null;
   const [mouseGridX, mouseGridY] = gridMouse();
   let closest = null;
-  let closestDistance = GRAB_RADIUS;
+  // the same reach on screen however small the grid is shown
+  let closestDistance = GRAB_RADIUS / view.scale;
   for (const anchor of anchors) {
     const [x, y] = anchorPosition(anchor);
     const distanceToMouse = dist(x, y, mouseGridX, mouseGridY);
@@ -1907,7 +1935,7 @@ window.mouseDragged = function mouseDragged() {
   if (!dragging) return;
 
   // ignore tiny wobbles, so a click doesn't count as a drag
-  if (!dragging.moved && dist(mouseX, mouseY, dragging.startX, dragging.startY) < DRAG_THRESHOLD) return;
+  if (!dragging.moved && dist(mouseX, mouseY, dragging.startX, dragging.startY) < DRAG_THRESHOLD / view.scale) return;
   dragging.moved = true;
 
   // follow the mouse, but stay on the grid
@@ -1987,6 +2015,7 @@ window.addEventListener('keydown', (event) => {
     library.toggle();
     topBar.hidden = !topBar.hidden;
     stageFrame.element.hidden = topBar.hidden;
+    dock.element.hidden = topBar.hidden;
   }
 });
 
@@ -2003,7 +2032,7 @@ function toggleAllFolders() {
 function setPaused(paused) {
   animationPaused = paused;
   // the Play/Pause button in the panel shows what a click does next
-  if (playbackControls) playbackControls.showPaused(paused);
+  playbackControls.forEach((controls) => controls.showPaused(paused));
 }
 
 function togglePause() {
@@ -2559,7 +2588,7 @@ function drawingPicture() {
 }
 
 window.windowResized = function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  fitView();
 };
 
 // This template's controls, added below the shared ones from src/lib/gui.js.
@@ -2651,7 +2680,7 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
 
 
   // the Playback headline at the end, with Restart and Play/Pause on it
-  playbackControls = addPlaybackSection(gui);
+  addPlaybackSection(gui);
 
   // A closed folder lights up as a whole when the mouse is over it (see
   // index.html), so a click anywhere in it opens it, not only on its title.
@@ -2737,13 +2766,24 @@ function makeSectionTitle(text) {
 }
 
 // The Playback section at the end of the panel: its headline, then Restart,
-// Play/Pause and Stop as square buttons, and a bar that shows how far the
-// Animation loop has come. Clicking or dragging along the bar jumps there
-// (see seekLoop()). It gives back showPaused(paused), which swaps the
-// Play/Pause icon (setPaused() calls it), and showProgress(), see below.
+// Play/Pause and Stop as square buttons, and the loop bar.
 function addPlaybackSection(gui) {
   const heading = makeSectionTitle('Playback');
+  const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
+  const row = document.createElement('div');
+  row.className = 'panel-playback';
+  row.append(restartButton, pauseButton, stopButton, progress);
+  gui.$children.append(heading, row);
+}
 
+// Restart, Play/Pause and Stop as square buttons, and a bar that shows how
+// far the Animation loop has come. Clicking or dragging along the bar jumps
+// there (see seekLoop()). The control panel and the dock each get a set;
+// each set is added to playbackControls, so setPaused() and
+// updatePlaybackProgress() keep them all the same. It gives back the
+// buttons and the bar to place, and showPaused(paused), which swaps the
+// Play/Pause icon, and showProgress(), see below.
+function createPlaybackControls() {
   const restartButton = makeIconButton(RESTART_ICON, 'Restart', restartDrawing);
   const pauseButton = makeIconButton(PAUSE_ICON, 'Pause', togglePause);
   const stopButton = makeIconButton(STOP_ICON, 'Stop', stopDrawing);
@@ -2771,11 +2811,6 @@ function addPlaybackSection(gui) {
     if (progress.hasPointerCapture(event.pointerId)) seekToMouse(event);
   });
 
-  const row = document.createElement('div');
-  row.className = 'panel-playback';
-  row.append(restartButton, pauseButton, stopButton, progress);
-  gui.$children.append(heading, row);
-
   // while the drawing runs, the button offers to pause it; while it is
   // paused, to play it again
   const showPaused = (paused) => {
@@ -2793,16 +2828,112 @@ function addPlaybackSection(gui) {
     progress.classList.toggle('is-idle', !isLooping);
   };
 
-  return { showPaused, showProgress };
+  const controls = { restartButton, pauseButton, stopButton, progress, showPaused, showProgress };
+  playbackControls.push(controls);
+  return controls;
 }
 
-// The Playback bar follows the Animation loop. In Multiple view every
-// iteration runs its own loop at its own speed; the bar follows the first.
+// The Playback bars follow the Animation loop. In Multiple view every
+// iteration runs its own loop at its own speed; the bars follow the first.
 function updatePlaybackProgress() {
-  if (!playbackControls) return;
   const isLooping = uiParams.anchorMode === 'Animation';
   const step = isMultipleView() ? (iterations[0]?.loopStep ?? 0) : loopStep;
-  playbackControls.showProgress(isLooping ? step / uiParams.loopLength : 0, isLooping);
+  const share = isLooping ? step / uiParams.loopLength : 0;
+  playbackControls.forEach((controls) => controls.showProgress(share, isLooping));
+}
+
+// THE DOCK, below the grid on a narrow window (a phone, or a tablet held
+// upright), where the panels are folded away: the loop bar, centred under
+// the grid, and below it six buttons in two rows. Restart, Play/Pause and
+// Stop on top, Randomize All, Save Iteration and Reset All below. They do
+// the same as the buttons in the panels. fitView() places it; its look is
+// in index.html, under "the dock".
+function createDock() {
+  const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
+  const buttons = document.createElement('div');
+  buttons.className = 'dock-buttons';
+  buttons.append(
+    restartButton,
+    pauseButton,
+    stopButton,
+    makeButton('Randomize', randomizeAll, RANDOMIZE_ICON),
+    makeButton('Save', () => library.save(), SAVE_ICON),
+    makeButton('Reset', resetEverything, RESTART_ICON),
+  );
+
+  const element = document.createElement('div');
+  element.className = 'dock';
+  element.append(progress, buttons);
+  document.body.appendChild(element);
+  return { element };
+}
+
+// THE VIEW. The grid is shown at its real size, gridSize pixels, when the
+// window has room for it, and shrinks to fit when it hasn't:
+//   on a wide window, between the two panels and below the title bar, in
+//     the middle of the room that is left
+//   on a narrow window (a phone, a tablet held upright), across the width,
+//     with the dock below it. The grid, its labels and the dock sit
+//     together in the middle of the room below the title bar.
+//
+// The sketch works in its own pixels all the same: the canvas is made
+// larger by 1 / view.scale, and the browser shows it smaller, as big as
+// the window. So drawing, dragging and the exports work exactly as at the
+// real size, and p5 turns the mouse position back into the canvas's
+// pixels by itself. Runs at the start and whenever the window changes size.
+function fitView() {
+  let roomAcross;
+  let roomDown;
+  let dockHeight = 0;
+  if (panelButtons.isNarrow()) {
+    // the panels lie over the drawing here; their padding stays free on
+    // both sides
+    const sideRoom = cssPixels('--panel-padding');
+    dockHeight = dock.element.offsetHeight;
+    roomAcross = windowWidth - sideRoom * 2;
+    roomDown = windowHeight - topBarHeight - STAGE_LABEL_ROOM * 2 - DOCK_GAP - dockHeight - sideRoom;
+  } else {
+    // A panel hidden with the g key measures 0 wide. It still counts with
+    // the width it had, so the grid keeps its size when the UI is hidden.
+    // Folded panels count too: the grid only moves to the middle then.
+    view.libraryWidth = library.element.offsetWidth || view.libraryWidth;
+    view.controlsWidth = panel.domElement.offsetWidth || view.controlsWidth;
+    roomAcross = windowWidth - view.libraryWidth - view.controlsWidth - cssPixels('--panel-gap') * 2;
+    roomDown = windowHeight - topBarHeight - STAGE_LABEL_ROOM * 2;
+  }
+  view.scale = Math.min(1, roomAcross / gridSize, roomDown / gridSize);
+
+  // the grid (and the dock below it, if there is one) in the middle of the
+  // room below the title bar
+  const shownGridSize = gridSize * view.scale;
+  const dockRoom = dockHeight > 0 ? DOCK_GAP + dockHeight : 0;
+  const blockHeight = STAGE_LABEL_ROOM * 2 + shownGridSize + dockRoom;
+  const blockTop = topBarHeight + Math.max(0, (windowHeight - topBarHeight - blockHeight) / 2);
+  const gridScreenTop = blockTop + STAGE_LABEL_ROOM;
+  view.gridTop = gridScreenTop / view.scale;
+  dock.element.style.top = `${gridScreenTop + shownGridSize + STAGE_LABEL_ROOM + DOCK_GAP}px`;
+
+  const canvasWidth = windowWidth / view.scale;
+  const canvasHeight = windowHeight / view.scale;
+  resizeCanvas(canvasWidth, canvasHeight);
+  // At least as many canvas pixels as ink pixels, also on screens that
+  // aren't Retina, so the saved picture keeps the ink's full detail. Only
+  // on a phone or tablet (a touch screen) a very large canvas gets fewer,
+  // to stay below MAX_TOUCH_CANVAS_PIXELS.
+  const fullDensity = Math.max(displayDensity(), INK_SCALE);
+  const isTouchScreen = navigator.maxTouchPoints > 0;
+  const largestDensity = isTouchScreen ? Math.sqrt(MAX_TOUCH_CANVAS_PIXELS / (canvasWidth * canvasHeight)) : fullDensity;
+  pixelDensity(Math.min(fullDensity, largestDensity));
+  // shown as big as the window, whatever its own size
+  drawingContext.canvas.style.width = `${windowWidth}px`;
+  drawingContext.canvas.style.height = `${windowHeight}px`;
+  // the labels around the grid and the dock take the grid's size on screen
+  document.documentElement.style.setProperty('--shown-grid-size', `${shownGridSize}px`);
+}
+
+// A size set in index.html, like --panel-padding, in pixels
+function cssPixels(name) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
 }
 
 // The Invert switch, as the panel and the start screen both have it.
@@ -2919,7 +3050,8 @@ function updateStageFrame() {
   const { element, labels } = stageFrame;
   if (element.hidden) return;
 
-  const place = `translate(${gridLeft()}px, ${gridTop()}px)`;
+  // the grid's place in the sketch's pixels, turned into pixels on screen
+  const place = `translate(${gridLeft() * view.scale}px, ${gridTop() * view.scale}px)`;
   if (element.style.transform !== place) element.style.transform = place;
 
   const perRow = uiParams.iterationsPerRow;
@@ -2961,6 +3093,7 @@ panelButtons = createPanelButtons();
 topBar = createTopBar();
 topBarHeight = topBar.offsetHeight;
 stageFrame = createStageFrame();
+dock = createDock();
 panel = createGUI({
   params: uiParams,
   // lil-gui's own title. It is hidden (see index.html): a click on it would
