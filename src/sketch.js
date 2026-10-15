@@ -2159,10 +2159,11 @@ function randomizeAll() {
 
 // Puts everything back the way the sketch opens: every value in the panel,
 // the colors and the guides, with fresh anchors and a running animation.
-// Only the mode and the view (Single or Multiple) stay: in 'Glyph' the anchors come from the (reset) text, in
-// 'Shape' and 'Animation' they are new random ones.
+// Only the mode, the view (Single or Multiple) and the Invert switch stay:
+// in 'Glyph' the anchors come from the (reset) text, in 'Shape' and
+// 'Animation' they are new random ones.
 function resetEverything() {
-  const { anchorMode: mode, viewMode, iterationsPerRow } = uiParams;
+  const { anchorMode: mode, viewMode, iterationsPerRow, invertColors: isInverted } = uiParams;
   for (const [settingName, value] of Object.entries(startingParams)) {
     uiParams[settingName] = structuredClone(value);
   }
@@ -2170,6 +2171,13 @@ function resetEverything() {
   // the view stays too: Single stays Single, Multiple keeps its size
   uiParams.viewMode = viewMode;
   uiParams.iterationsPerRow = iterationsPerRow;
+  // Invert stays as it is. While it is on, the starting Main and Background
+  // are turned around too, so the drawing keeps its dark look.
+  uiParams.invertColors = isInverted;
+  if (isInverted) {
+    uiParams.foregroundColor = invertedColor(uiParams.foregroundColor);
+    uiParams.backgroundColor = invertedColor(uiParams.backgroundColor);
+  }
   // both remembered anchor counts start over, and Animation gets its own
   anchorCountPerMode = { Shape: startingParams.anchorCount, Animation: ANIMATION_ANCHOR_COUNT };
   lastGridMode = mode === 'Animation' ? 'Animation' : 'Shape';
