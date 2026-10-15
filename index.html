@@ -33,7 +33,7 @@
         overflow: hidden;
         background: var(--page-color);
         /* anything without a font of its own */
-        font-family: var(--text-font);
+        font-family: 'Space Grotesk', sans-serif;
         /* every text gets a little more room between its letters; only
            the headlines keep their own, tighter spacing */
         letter-spacing: var(--text-tracking);
@@ -47,18 +47,18 @@
          headlines, the folder titles, the Iteration title and the mode
          names, Bold for the other headlines. */
       @font-face {
-        font-family: 'SpaceGrotesk-Regular.otf';
-        src: url('/fonts/SpaceGrotesk-Regular.otf');
+        font-family: 'Space Grotesk';
+        src: url('/fonts/SpaceGrotesk-Regular.ttf') format('truetype');
         font-weight: 400;
       }
       @font-face {
-        font-family: 'SpaceGrotesk-Medium.otf';
-        src: url('/fonts/SpaceGrotesk-Medium.otf');
+        font-family: 'Space Grotesk';
+        src: url('/fonts/SpaceGrotesk-Medium.ttf') format('truetype');
         font-weight: 500;
       }
       @font-face {
-        font-family: 'SpaceGrotesk-Bold.otf';
-        src: url('/fonts/SpaceGrotesk-Bold.otf');
+        font-family: 'Space Grotesk';
+        src: url('/fonts/SpaceGrotesk-Bold.ttf') format('truetype');
         font-weight: 700;
       }
 
@@ -100,12 +100,12 @@
         --load-button-color: rgb(255 255 255 / 0.92);
         --backdrop-color: rgb(236 236 232 / 0.72);
 
-        --heading-font: 'SpaceGrotesk-Bold.otf', sans-serif;
+        --heading-font: 'Space Grotesk', sans-serif;
         /* the section headlines (Library, Modes, Controls, Playback), the
            folder titles, the Iteration title in the title bar and the
            mode names on the start screen */
-        --title-font: 'SpaceGrotesk-Medium.otf', sans-serif;
-        --text-font: 'SpaceGrotesk-Regular.otf', sans-serif;
+        --title-font: 'Space Grotesk', sans-serif;
+        --text-font: 'Space Grotesk', sans-serif;
         /* the small labels in capitals, like on a technical drawing. The
            same font as the text for now; set another one here to change
            only the labels. */

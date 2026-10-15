@@ -31,9 +31,10 @@
 
 // How many frames the video shows per second.
 const FRAMES_PER_SECOND = 60;
-// How much data a second of video may take, in bits. More is sharper and
-// bigger: 12 million is about 1.5 MB per second.
-const BITS_PER_SECOND = 12_000_000;
+// Give fine lines and grain more data, so compression keeps their detail.
+// At 1440 × 1440 and 60 fps this asks for about 40 Mbps (5 MB per second).
+// Wider videos get more data too, keeping the same budget for each pixel.
+const BITS_PER_PIXEL_PER_FRAME = 0.32;
 // Every this many frames, a frame is stored whole (a "key frame"); the ones
 // in between only store what changed. More often makes the file bigger,
 // less often makes jumping around in a player slower.
@@ -75,6 +76,9 @@ export function createVideoRecorder({ height }) {
   function start(width) {
     frameCanvas.width = width;
     frameCanvas.height = height;
+    // Keep fine edges smooth when shrinking the detailed drawing to video.
+    // Resizing a canvas resets this setting, so set it after the size.
+    frameContext.imageSmoothingQuality = 'high';
     encoder = new VideoEncoder({
       output: (chunk, metadata) => {
         const data = new Uint8Array(chunk.byteLength);
@@ -93,7 +97,9 @@ export function createVideoRecorder({ height }) {
       codec: CODEC,
       width,
       height,
-      bitrate: BITS_PER_SECOND,
+      bitrate: Math.round(width * height * FRAMES_PER_SECOND * BITS_PER_PIXEL_PER_FRAME),
+      bitrateMode: 'variable',
+      latencyMode: 'quality',
       framerate: FRAMES_PER_SECOND,
       avc: { format: 'avc' },
     });
