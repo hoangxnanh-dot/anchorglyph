@@ -73,6 +73,11 @@ const SLIDE_DURATION = 700;
 // The easing of the slide, as CSS writes it: fast at first, then slowing
 // down gently until it lands ("ease out quint", see https://easings.net).
 const SLIDE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+// Deleting: the cards that go fade out and shrink to this size over
+// REMOVE_DURATION milliseconds, speeding up as they leave (ease-in). Then
+// the cards below slide up into the gap, like the slide above.
+const REMOVE_DURATION = 300;
+const REMOVE_SCALE = 0.94;
 
 // The text in the library while nothing is saved: what the tool does and
 // how to start. One paragraph per line.
@@ -352,7 +357,8 @@ export function createLibrary({ capture, apply }) {
   // slides down into it. The other cards were pushed down by the new one; each
   // starts where it was before and slides to its new place, so nothing jumps.
   // The list cuts off what sticks out above it, so the new card seems to come
-  // out from under the buttons.
+  // out from under the buttons. After deleting there is no new card
+  // (newId is null): the cards only slide up into the gap.
   function slideCards(newId, placesBefore) {
     for (const item of list.children) {
       const placeNow = item.getBoundingClientRect().top;
@@ -393,6 +399,11 @@ export function createLibrary({ capture, apply }) {
     removeVariations(selected);
   }
 
+  // The variations are gone at once; their cards take a moment to leave:
+  // they fade out and shrink a little, and can't be clicked meanwhile. Then
+  // the list is rebuilt without them, and the cards below slide up from
+  // where they were into the gap (see slideCards()). If the library is
+  // empty then, its message fades in.
   function removeVariations(toRemove) {
     variations = variations.filter((variation) => !toRemove.includes(variation));
     for (const { id } of toRemove) {
@@ -400,7 +411,31 @@ export function createLibrary({ capture, apply }) {
       if (id === activeId) activeId = null;
       if (id === selectionStartId) selectionStartId = null;
     }
-    showList();
+    // Delete, PNG and SVG grey out right away if nothing is selected anymore
+    updateSelectionDisplay();
+
+    const removedIds = new Set(toRemove.map(({ id }) => id));
+    const leaving = [...list.children].filter((item) => removedIds.has(item.dataset.id));
+    const fades = leaving.map((item) => {
+      item.style.pointerEvents = 'none';
+      // "forwards" keeps the card invisible after the fade, until it is removed
+      return item.animate(
+        [
+          { opacity: 1, transform: 'scale(1)' },
+          { opacity: 0, transform: `scale(${REMOVE_SCALE})` },
+        ],
+        { duration: REMOVE_DURATION, easing: 'ease-in', fill: 'forwards' },
+      ).finished;
+    });
+
+    Promise.all(fades).then(() => {
+      const placesBefore = cardPlaces();
+      showList();
+      slideCards(null, placesBefore);
+      if (variations.length === 0) {
+        emptyMessage.animate([{ opacity: 0 }, { opacity: 1 }], { duration: REMOVE_DURATION, easing: 'ease-out' });
+      }
+    });
   }
 
   // Every selected variation becomes a file in your Downloads folder, named
@@ -651,8 +686,10 @@ export function createLibrary({ capture, apply }) {
   // Ticks the checkboxes and highlights the pictures of the selected
   // variations, without building the list again.
   function updateSelectionDisplay() {
-    list.querySelectorAll('.library-item').forEach((item, index) => {
-      const selected = selectedIds.has(variations[index].id);
+    // each card knows its variation's id; cards that are still fading out
+    // after a delete have no variation anymore, and count as not selected
+    list.querySelectorAll('.library-item').forEach((item) => {
+      const selected = selectedIds.has(item.dataset.id);
       item.classList.toggle('is-selected', selected);
       item.querySelector('.library-selection-checkbox').checked = selected;
     });
