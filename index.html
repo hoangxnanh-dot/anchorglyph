@@ -439,9 +439,17 @@
         translate: 100% 0;
       }
       .start-screen {
-        /* how wide the column of cards is: a third of the window, so the
-           cards grow and shrink with it, but never narrower than this */
-        --start-modes-width: max(320px, 34vw);
+        /* how wide the column of cards is: as wide as the control panel,
+           so it sits exactly where the panel slides in once a mode is
+           picked */
+        --start-modes-width: var(--panel-width);
+        /* how far below the title bar the tops of the switches on the
+           right start (where the control panel's Invert switch is), and
+           the tops of the headline's capitals on the left */
+        --start-switch-top: 24px;
+        --start-headline-top: 40px;
+        /* the room above the switches inside the card column */
+        --start-modes-padding-top: 16px;
         position: fixed;
         top: var(--top-bar-height);
         left: 0;
@@ -470,10 +478,17 @@
       :root {
         --start-margin: var(--panel-padding);
       }
+      /* The tops of the headline's capitals start --start-headline-top
+         below the title bar. A line of text has empty room above its
+         capitals, more the larger the text; text-box cuts it away, so the
+         headline starts exactly at their top, whatever its size. (Browsers
+         without text-box, like older Firefox, keep the room, and the
+         headline sits a little lower.) */
       .start-headline {
         position: absolute;
-        top: 40px;
+        top: var(--start-headline-top);
         left: var(--start-margin);
+        text-box: trim-both cap alphabetic;
         font-family: var(--heading-font);
         font-size: clamp(44px, 5vw, 84px);
         font-weight: 700;
@@ -494,37 +509,49 @@
         flex-direction: column;
         justify-content: flex-end;
         gap: 14px;
-        padding: 16px var(--start-margin) 56px;
+        padding: var(--start-modes-padding-top) var(--start-margin) 56px;
         background: var(--page-color);
         border-left: 1px solid var(--line-color);
-        transition: transform var(--fade-duration) ease var(--start-screen-delay);
+        /* the slide out and back in: the same as the control panel's (see
+           "folded panels"), at the start screen's moment */
+        transition: translate var(--panel-slide-duration) var(--fold-easing) var(--start-screen-delay);
       }
       /* Invert and Anchors at the top of the card column, on the right,
-         below each other, with their switches lined up on the right.
-         Invert sits exactly where the panel's Invert switch is. The panel
-         keeps room for its scrollbar on the right (--switch-scrollbar-room,
-         as wide as lil-gui's --scrollbar-width), so these keep the same
-         room. The cards sit at the bottom. */
+         below each other, with their switches lined up on the right. The
+         panel keeps room for its scrollbar on the right
+         (--switch-scrollbar-room, as wide as lil-gui's --scrollbar-width),
+         so these keep the same room. The cards sit at the bottom.
+         --switch-padding is the room a switch keeps above its track (see
+         "the switches"); the margin brings the track's top to
+         --start-switch-top. */
       .start-switches {
         --switch-scrollbar-room: 6px;
+        --switch-padding: 4px;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
         gap: 6px;
-        margin: 4px var(--switch-scrollbar-room) auto;
+        margin: calc(var(--start-switch-top) - var(--start-modes-padding-top) - var(--switch-padding)) var(--switch-scrollbar-room) auto;
       }
-      /* the cards slide a little to the right as they fade out, and back
-         as they come in again */
+      /* Picking a mode slides the cards out to the right, the whole column's
+         width, while the control panel slides in to the same place, the
+         same way. Going back to the start screen slides them in again. */
       body:not(.is-starting) .start-modes {
-        transform: translateX(32px);
+        translate: 100% 0;
       }
       .start-mode {
+        /* the arrow's size, and the room kept between it and the name */
+        --mode-arrow-size: 28px;
+        --mode-name-gap: 12px;
         position: relative;
         display: grid;
         grid-template-columns: 1fr auto;
         align-items: center;
         row-gap: 10px;
-        padding: 30px 36px 28px;
+        column-gap: var(--mode-name-gap);
+        padding: 30px 24px 28px;
+        /* lets the name measure the card's width (cqi, see .start-mode-name) */
+        container-type: inline-size;
         border: 1px solid var(--line-color);
         border-radius: var(--card-radius);
         background: var(--page-color);
@@ -547,10 +574,18 @@
         grid-column: 1 / -1;
         color: var(--muted-color);
       }
+      /* The mode's name: it grows with the window, but never past the room
+         the card has for it, next to the arrow. 100cqi is the card's width
+         inside its padding; "Animation", the longest name, is about
+         --longest-name-width times as wide as its font size. */
       .start-mode-name {
+        --longest-name-width: 5;
         color: var(--foreground-color);
         font-family: var(--title-font);
-        font-size: clamp(32px, 3vw, 48px);
+        font-size: min(
+          clamp(28px, 2.6vw, 40px),
+          calc((100cqi - var(--mode-arrow-size) - var(--mode-name-gap)) / var(--longest-name-width))
+        );
         font-weight: 500;
         letter-spacing: calc(-0.01em + var(--text-tracking));
       }
@@ -559,8 +594,8 @@
         transition: transform 200ms;
       }
       .start-mode-arrow svg {
-        width: 28px;
-        height: 28px;
+        width: var(--mode-arrow-size);
+        height: var(--mode-arrow-size);
       }
       .start-mode:hover .start-mode-arrow,
       .start-mode.is-active .start-mode-arrow {

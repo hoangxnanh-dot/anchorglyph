@@ -16,9 +16,7 @@
 //                  { label, title, isOn, onClick } (see createSwitchButton
 //                  in src/lib/gui.js)
 //
-// It gives back { stageWidth, open, isOpen, updateSwitches }:
-//   stageWidth()      how wide the left part is, so the sketch can put the
-//                     drawing in its middle
+// It gives back { open, isOpen, updateSwitches }:
 //   open(mode)        brings the start screen back, with the card of `mode`
 //                     lit up
 //   isOpen()          whether it is open, or on its way there
@@ -135,5 +133,5 @@ export function createStartScreen({ modes, startingMode, onPreview, onChoose, sw
     for (const switchButton of switchButtons) switchButton.updateDisplay();
   }
 
-  return { stageWidth: () => stage.offsetWidth, open, isOpen, updateSwitches };
+  return { open, isOpen, updateSwitches };
 }

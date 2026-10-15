@@ -502,9 +502,9 @@ let startTransition = null;
 // off, so the start screen shows the drawing alone. The eyes in the panel
 // are separate.
 const startGuides = { showGrid: false, showAnchors: false };
-// Where the grid's left edge is on the start screen: in the middle of the
-// start screen's left part. Measured while the start screen shows, see
-// updateStartTransition().
+// Where the grid's left edge is on the start screen: where it will be on the
+// main screen (see mainGridLeft()). Measured while the start screen shows,
+// see updateStartTransition().
 let startGridLeft = 0;
 // Restart, Play/Pause, Stop and the loop bar: one set in the control panel
 // and one in the dock, kept the same (see createPlaybackControls()).
@@ -656,9 +656,9 @@ function anchorsMovedBy(savedAnchors, moves) {
 // works out how far that has come: slow at first, fast in the middle, slow
 // at the end (cubicInOut).
 function updateStartTransition() {
-  // the start screen measures its width on screen; the grid is placed in
-  // the sketch's pixels (see fitView())
-  if (startScreenAmount > 0 || startTransition) startGridLeft = (startScreen.stageWidth() / view.scale - gridSize) / 2;
+  // the start screen shows the grid exactly where it will be on the main
+  // screen, so it doesn't move when a mode is picked
+  if (startScreenAmount > 0 || startTransition) startGridLeft = mainGridLeft();
   if (!startTransition) return;
   const { from, to, startTime } = startTransition;
   const progress = constrain((millis() - startTime) / START_TRANSITION_DURATION, 0, 1);
@@ -1991,9 +1991,9 @@ function drawAnchorShape(anchor, x, y) {
 // (the buttons in the title bar) and hidden ones (g key) leave room, so the
 // grid moves towards the middle of the window, gliding along as a panel
 // slides away. On a narrow window the panels lie over the drawing, so the
-// grid stays in the middle of the window. On the start screen it sits in
-// the middle of the start screen's left part, and glides over from there
-// once a mode is picked.
+// grid stays in the middle of the window. On the start screen it already
+// sits where it will be on the main screen (see mainGridLeft()), so it
+// stays put while the panels slide in.
 function gridLeft() {
   const besidePanels = panelButtons && !panelButtons.isNarrow();
   // the panels are measured on screen; the grid is placed in the sketch's
@@ -2004,6 +2004,22 @@ function gridLeft() {
   return lerp(mainLeft, startGridLeft, startScreenAmount);
 }
 
+// Where the grid's left edge comes to rest on the main screen: in the middle
+// between the two panels once they have slid in, or without a panel that is
+// folded (or hidden with the g key). On a narrow window the panels lie over
+// the drawing, so the grid is in the middle of the window. The start screen
+// shows the grid here. offsetWidth is a panel's own width, wherever it is
+// sliding.
+function mainGridLeft() {
+  const besidePanels = !panelButtons.isNarrow();
+  const restingWidth = (element, foldedClass) => (besidePanels && !document.body.classList.contains(foldedClass)
+    ? element.offsetWidth / view.scale
+    : 0);
+  const leftSide = restingWidth(library.element, 'is-library-folded');
+  const rightSide = restingWidth(panel.domElement, 'is-controls-folded');
+  return leftSide + (width - leftSide - rightSide - gridSize) / 2;
+}
+
 // How far a panel reaches into the window from the left or right edge: all
 // of its width while it is open, less while it slides away, nothing once it
 // is folded. A hidden panel (g key) measures 0 wide, so it covers nothing.
@@ -2012,9 +2028,12 @@ function coveredFromLeft(element) {
   return constrain(box.right, 0, box.width);
 }
 
+// The window's width on screen (windowWidth), not the canvas's own width:
+// on a small window the canvas has more pixels than the screen (see
+// fitView()), and the panel is measured on screen.
 function coveredFromRight(element) {
   const box = element.getBoundingClientRect();
-  return constrain(width - box.left, 0, box.width);
+  return constrain(windowWidth - box.left, 0, box.width);
 }
 
 // The grid sits in the middle of the room below the title bar, or on a
