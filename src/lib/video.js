@@ -4,7 +4,7 @@
 // exported as an MP4 film of how it came to be, up to the moment it was
 // saved.
 //
-//   const recorder = createVideoRecorder({ height: 1440 });
+//   const recorder = createVideoRecorder({ height: 2400 });
 //   recorder.addFrame(canvas, left, top, width, height, extra);  every frame
 //   const recording = await recorder.snapshot();   the video up to now
 //   recorder.reset();                              start a new video
@@ -32,21 +32,21 @@
 // How many frames the video shows per second.
 const FRAMES_PER_SECOND = 60;
 // Give fine lines and grain more data, so compression keeps their detail.
-// At 1440 × 1440 and 60 fps this asks for about 40 Mbps (5 MB per second).
 // Wider videos get more data too, keeping the same budget for each pixel.
-const BITS_PER_PIXEL_PER_FRAME = 0.32;
+const BITS_PER_PIXEL_PER_FRAME = 0.5;
 // Every this many frames, a frame is stored whole (a "key frame"); the ones
 // in between only store what changed. More often makes the file bigger,
 // less often makes jumping around in a player slower.
 const KEY_FRAME_EVERY = FRAMES_PER_SECOND * 2;
-// H.264 "High" profile, level 5.1: big enough for a 1440 pixel video, also
-// when a slanted grid makes it wider than tall.
-const CODEC = 'avc1.640033';
+// H.264 "High" profile, level 5.2: large enough for 2400 px at 60 fps, also
+// when a slanted grid makes the video wider than it is tall.
+const CODEC = 'avc1.640034';
 // The encoder works in millionths of a second.
 const MICROSECONDS_PER_SECOND = 1_000_000;
-// If the encoder falls this many frames behind, addFrame() leaves the frame
-// out until it catches up, so the drawing doesn't slow down.
-const MAX_WAITING_FRAMES = 30;
+// When this many frames are waiting, the sketch pauses its animation until
+// the encoder catches up. That preserves every movement without letting a
+// large queue use too much memory.
+const MAX_WAITING_FRAMES = FRAMES_PER_SECOND / 2;
 // How many frames the reader unpacks ahead. Unpacked frames are large, so
 // only a few are kept waiting.
 const READ_AHEAD = 8;
@@ -67,18 +67,20 @@ export function createVideoRecorder({ height }) {
   let extras = [];
   // what a player needs to know to read the frames, from the encoder
   let decoderDescription = null;
+  // The encoder decides how canvas RGB becomes video color. Keep its answer
+  // so the MP4 does not contradict it with guessed color metadata.
+  let decoderColorSpace = null;
   let frameCount = 0;
+  let startPromise = null;
+  let generation = 0;
   // set after a snapshot, so the next frame is stored whole again
   let nextIsKeyFrame = true;
   // something went wrong in the encoder: record nothing until reset()
   let broken = false;
 
-  function start(width) {
-    frameCanvas.width = width;
-    frameCanvas.height = height;
-    // Keep fine edges smooth when shrinking the detailed drawing to video.
-    // Resizing a canvas resets this setting, so set it after the size.
-    frameContext.imageSmoothingQuality = 'high';
+  async function start(width, startGeneration) {
+    if (startGeneration !== generation) return;
+
     encoder = new VideoEncoder({
       output: (chunk, metadata) => {
         const data = new Uint8Array(chunk.byteLength);
@@ -86,6 +88,15 @@ export function createVideoRecorder({ height }) {
         encodedFrames.push({ data, isKeyFrame: chunk.type === 'key', timestamp: chunk.timestamp });
         if (metadata?.decoderConfig?.description) {
           decoderDescription = new Uint8Array(metadata.decoderConfig.description);
+        }
+        const colorSpace = metadata?.decoderConfig?.colorSpace;
+        if (colorSpace) {
+          decoderColorSpace = {
+            primaries: colorSpace.primaries,
+            transfer: colorSpace.transfer,
+            matrix: colorSpace.matrix,
+            fullRange: colorSpace.fullRange,
+          };
         }
       },
       error: () => {
@@ -105,18 +116,44 @@ export function createVideoRecorder({ height }) {
     });
   }
 
+  // Starts the asynchronous capability check before the sketch advances its
+  // next drawing step. This keeps the first recorded frame from being lost.
+  function prepare(sourceWidth, sourceHeight) {
+    if (!supported || broken) return;
+    const width = Math.round((height * sourceWidth) / sourceHeight / 2) * 2;
+    if ((encoder || startPromise) && width !== frameCanvas.width) reset();
+    if (encoder || startPromise) return;
+
+    frameCanvas.width = width;
+    frameCanvas.height = height;
+    // Keep fine edges smooth when shrinking the detailed drawing to video.
+    // Resizing a canvas resets this setting, so set it after the size.
+    frameContext.imageSmoothingEnabled = true;
+    frameContext.imageSmoothingQuality = 'high';
+    const startGeneration = generation;
+    startPromise = start(width, startGeneration)
+      .catch(() => {
+        if (startGeneration === generation) broken = true;
+      })
+      .finally(() => {
+        if (startGeneration === generation) startPromise = null;
+      });
+  }
+
   // Adds one frame: the part of `source` (a canvas) from `left`, `top`,
   // `sourceWidth` × `sourceHeight` pixels, made the video's height. The
   // width follows its shape, rounded to an even number, which H.264 needs.
   // If the shape changes (the grid's slant), a new video starts.
-  // Gives back whether the frame was added: false while the encoder is
-  // too far behind, or if the browser can't record.
+  // Gives back whether the frame was added. false means the browser cannot
+  // keep recording this video; frames are never silently left out.
   function addFrame(source, left, top, sourceWidth, sourceHeight, extra = null) {
     if (!supported || broken) return false;
     const width = Math.round((height * sourceWidth) / sourceHeight / 2) * 2;
     if (encoder && width !== frameCanvas.width) reset();
-    if (!encoder) start(width);
-    if (encoder.state !== 'configured' || encoder.encodeQueueSize > MAX_WAITING_FRAMES) return false;
+    if (!encoder) prepare(sourceWidth, sourceHeight);
+    if (!encoder) return false;
+    if (encoder.state !== 'configured') return false;
+    if (encoder.encodeQueueSize > MAX_WAITING_FRAMES) return false;
 
     frameContext.drawImage(source, left, top, sourceWidth, sourceHeight, 0, 0, frameCanvas.width, frameCanvas.height);
     const frameDuration = MICROSECONDS_PER_SECOND / FRAMES_PER_SECOND;
@@ -137,6 +174,7 @@ export function createVideoRecorder({ height }) {
   // { width, height, frames, description, extras }. null when nothing was
   // recorded (or the browser can't).
   async function snapshot() {
+    if (startPromise) await startPromise;
     if (!encoder || broken || frameCount === 0) return null;
     const recording = encoder;
     const lastTimestamp = Math.round(((frameCount - 1) * MICROSECONDS_PER_SECOND) / FRAMES_PER_SECOND);
@@ -156,23 +194,35 @@ export function createVideoRecorder({ height }) {
       height,
       frames,
       description: decoderDescription,
+      colorSpace: decoderColorSpace,
       extras: extras.slice(0, frames.length),
     };
   }
 
   // Throws the recording away; the next frame starts a new video.
   function reset() {
+    generation += 1;
     if (encoder && encoder.state !== 'closed') encoder.close();
     encoder = null;
+    startPromise = null;
     encodedFrames = [];
     extras = [];
     decoderDescription = null;
+    decoderColorSpace = null;
     frameCount = 0;
     nextIsKeyFrame = true;
     broken = false;
   }
 
-  return { addFrame, snapshot, reset };
+  return {
+    addFrame,
+    prepare,
+    snapshot,
+    reset,
+    // Recording support or failure must never freeze the artwork itself.
+    canAcceptFrame: () => !supported || broken || (!startPromise && (!encoder || encoder.encodeQueueSize <= MAX_WAITING_FRAMES)),
+    hasFailed: () => broken,
+  };
 }
 
 // Plays a recording back, frame by frame, as pictures that can be drawn
@@ -223,21 +273,22 @@ export function createFrameReader({ frames, description, width, height }) {
 // Packs encoded H.264 frames into an MP4 file. An MP4 file is a row of
 // "boxes": each one starts with its size and a four-letter name, then its
 // contents, which may be more boxes. This writes the few boxes a player
-// needs: what kind of file it is (ftyp), the frames themselves (mdat), and
-// the description of the video (moov): its size, how long each frame
+// needs: what kind of file it is (ftyp), the description of the video
+// (moov), and the frames themselves (mdat): its size, how long each frame
 // lasts, which frames are key frames, and where in mdat each one sits.
-export function mp4File({ width, height, frames, description }) {
+export function mp4File({ width, height, frames, description, colorSpace }) {
   // the file counts time in frames: each frame lasts 1 of these units
   const timescale = FRAMES_PER_SECOND;
   const frameTotal = frames.length;
   const frameSizes = frames.map((frame) => frame.data.byteLength);
   const dataSize = frameSizes.reduce((sum, size) => sum + size, 0);
+  const LARGEST_32_BIT_SIZE = 0xffffffff;
+  if (BOX_HEADER_SIZE + dataSize > LARGEST_32_BIT_SIZE) {
+    throw new Error('This recording is too large for a browser-made MP4.');
+  }
 
   const MINOR_VERSION = 0x200;
   const fileType = box('ftyp', text('isom'), u32(MINOR_VERSION), text('isom'), text('iso2'), text('avc1'), text('mp41'));
-  // the frames start right after mdat's own size and name
-  const firstFrameOffset = fileType.byteLength + BOX_HEADER_SIZE;
-
   // 1 in the middle of 16.16 numbers, and the "do not turn or move" matrix
   const ONE_FIXED = 0x00010000;
   const ONE_FIXED_2_30 = 0x40000000;
@@ -270,35 +321,85 @@ export function mp4File({ width, height, frames, description }) {
     u32(0), u32(0), u32(timescale), u32(frameTotal), u16(LANGUAGE_UNDETERMINED), u16(0));
   const handler = fullBox('hdlr', 0, 0, u32(0), text('vide'), zeros(12), text('VideoHandler\0'));
 
+  const colorInformation = colorInformationBox(colorSpace);
   const sampleEntry = box('avc1',
     zeros(6), u16(1), zeros(16), u16(width), u16(height),
     u32(SEVENTY_TWO_DPI), u32(SEVENTY_TWO_DPI), u32(0), u16(1), zeros(32),
-    u16(COLOR_DEPTH), u16(NO_COLOR_TABLE), box('avcC', description));
+    u16(COLOR_DEPTH), u16(NO_COLOR_TABLE), box('avcC', description),
+    ...(colorInformation ? [colorInformation] : []));
 
   const keyFrameNumbers = frames.flatMap((frame, index) => (frame.isKeyFrame ? [u32(index + 1)] : []));
-  const sampleTable = box('stbl',
-    fullBox('stsd', 0, 0, u32(1), sampleEntry),
-    // every frame lasts 1 unit
-    fullBox('stts', 0, 0, u32(1), u32(frameTotal), u32(1)),
-    fullBox('stss', 0, 0, u32(keyFrameNumbers.length), ...keyFrameNumbers),
-    // all frames sit in one block, one after the other
-    fullBox('stsc', 0, 0, u32(1), u32(1), u32(frameTotal), u32(1)),
-    fullBox('stsz', 0, 0, u32(0), u32(frameTotal), ...frameSizes.map(u32)),
-    fullBox('stco', 0, 0, u32(1), u32(firstFrameOffset)));
+  const frameDuration = MICROSECONDS_PER_SECOND / FRAMES_PER_SECOND;
+  const compositionOffsets = frames.map((frame, index) => Math.round(frame.timestamp / frameDuration) - index);
+  const compositionEntries = groupedValues(compositionOffsets);
 
-  const mediaInformation = box('minf',
-    fullBox('vmhd', 0, VIDEO_HEADER_FLAGS, zeros(8)),
-    box('dinf', fullBox('dref', 0, 0, u32(1), fullBox('url ', 0, DATA_IN_THIS_FILE))),
-    sampleTable);
+  function makeMovie(firstFrameOffset) {
+    const sampleTable = box('stbl',
+      fullBox('stsd', 0, 0, u32(1), sampleEntry),
+      // every frame lasts 1 unit
+      fullBox('stts', 0, 0, u32(1), u32(frameTotal), u32(1)),
+      fullBox('ctts', 1, 0, u32(compositionEntries.length),
+        ...compositionEntries.flatMap(({ count, value }) => [u32(count), i32(value)])),
+      fullBox('stss', 0, 0, u32(keyFrameNumbers.length), ...keyFrameNumbers),
+      // all frames sit in one block, one after the other
+      fullBox('stsc', 0, 0, u32(1), u32(1), u32(frameTotal), u32(1)),
+      fullBox('stsz', 0, 0, u32(0), u32(frameTotal), ...frameSizes.map(u32)),
+      fullBox('stco', 0, 0, u32(1), u32(firstFrameOffset)));
 
-  const movie = box('moov',
-    movieHeader,
-    box('trak', trackHeader, box('mdia', mediaHeader, handler, mediaInformation)));
+    const mediaInformation = box('minf',
+      fullBox('vmhd', 0, VIDEO_HEADER_FLAGS, zeros(8)),
+      box('dinf', fullBox('dref', 0, 0, u32(1), fullBox('url ', 0, DATA_IN_THIS_FILE))),
+      sampleTable);
+
+    return box('moov',
+      movieHeader,
+      box('trak', trackHeader, box('mdia', mediaHeader, handler, mediaInformation)));
+  }
+
+  // Put the movie description before the pixels. A website can then start
+  // playing a download before the whole MP4 has arrived.
+  const movieSize = makeMovie(0).byteLength;
+  const firstFrameOffset = fileType.byteLength + movieSize + BOX_HEADER_SIZE;
+  const movie = makeMovie(firstFrameOffset);
 
   // mdat is written as its header plus the frames, without copying them
   // into one big piece first
   const mediaDataHeader = concat(u32(BOX_HEADER_SIZE + dataSize), text('mdat'));
-  return new Blob([fileType, mediaDataHeader, ...frames.map((frame) => frame.data), movie], { type: 'video/mp4' });
+  return new Blob([fileType, movie, mediaDataHeader, ...frames.map((frame) => frame.data)], { type: 'video/mp4' });
+}
+
+// MP4 stores color names as numbers. Only write this box when WebCodecs
+// reports every value; otherwise the H.264 stream's own metadata is safer
+// than making a guess that can shift brightness or saturation in a player.
+function colorInformationBox(colorSpace) {
+  if (!colorSpace) return null;
+  const primaryCodes = { bt709: 1, bt470bg: 5, smpte170m: 6 };
+  const transferCodes = {
+    bt709: 1,
+    smpte170m: 6,
+    linear: 8,
+    'iec61966-2-1': 13,
+    pq: 16,
+    hlg: 18,
+  };
+  const matrixCodes = { rgb: 0, bt709: 1, bt470bg: 5, smpte170m: 6 };
+  const primaries = primaryCodes[colorSpace.primaries];
+  const transfer = transferCodes[colorSpace.transfer];
+  const matrix = matrixCodes[colorSpace.matrix];
+  if (primaries === undefined || transfer === undefined || matrix === undefined) return null;
+  const fullRangeFlag = colorSpace.fullRange ? 0x80 : 0;
+  return box('colr', text('nclx'), u16(primaries), u16(transfer), u16(matrix), u8(fullRangeFlag));
+}
+
+// Run-length encoding keeps a long list of equal timing offsets compact.
+function groupedValues(values) {
+  const groups = [];
+  for (const value of values) {
+    const last = groups[groups.length - 1];
+    if (last?.value === value) last.count += 1;
+    else groups.push({ count: 1, value });
+  }
+  return groups;
 }
 
 // A box: its size, its four-letter name, then its contents
@@ -337,6 +438,12 @@ function u16(value) {
 function u32(value) {
   const bytes = new Uint8Array(4);
   new DataView(bytes.buffer).setUint32(0, value);
+  return bytes;
+}
+
+function i32(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setInt32(0, value);
   return bytes;
 }
 
