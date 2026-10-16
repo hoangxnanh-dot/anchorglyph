@@ -47,8 +47,8 @@
 //
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
-// Randomize All       New grid, anchors, spline, colors, gradient, drift and
-//                     speed at once. In 'Glyph' it also types a new text of
+// Randomize All       New grid and grid slant, anchors, spline, colors,
+//                     gradient, drift and speed at once. In 'Glyph' it also types a new text of
 //                     1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
@@ -2186,7 +2186,7 @@ window.addEventListener('keydown', (event) => {
     // in 'Glyph' the text sets the anchors, so there is nothing to randomize
     if (uiParams.anchorMode !== 'Glyph') randomAnchors();
   } else if (event.key.toLowerCase() === 'r') {
-    // same as the "Randomize All" button: grid, anchors, spline, colors, drift
+    // same as the "Randomize All" button: grid, slant, anchors, spline, colors, drift
     // and speed, and in 'Glyph' a new text
     randomizeAll();
   } else if (event.key.toLowerCase() === 'c') {
@@ -2342,14 +2342,17 @@ function randomizeDrift() {
   refreshPanel();
 }
 
-// "Randomize All": grid, anchors, spline, colors, gradient, drift and speed
-// at once. In 'Glyph' the text is new too; in the other modes it stays. The
+// "Randomize All": grid and its slant, anchors, spline, colors, gradient,
+// drift and speed at once. In 'Glyph' the text is new too; in the other modes it stays. The
 // mode always stays.
 function randomizeAll() {
   // before the grid, so the anchors are built once, from the new text on
   // the new grid
   if (uiParams.anchorMode === 'Glyph') randomizeText();
   randomizeGrid();
+  // only here, not on the Grid arrows: a new lean for the grid. The colors
+  // below refresh the panel, so the Slant slider shows it.
+  uiParams.gridSlant = randomSliderValue(gridSlantRange);
   randomizeSpline();
   // before the colors, which refresh the panel, so it shows both
   randomizeGradient();
