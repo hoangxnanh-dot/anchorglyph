@@ -82,24 +82,3 @@ function toFile(file, filename) {
   const bytes = Uint8Array.from(atob(base64Text), (character) => character.charCodeAt(0));
   return new File([bytes], filename, { type });
 }
-
-// Copies the part of `source` (a canvas) inside `region`, { left, top,
-// width, height } in the source's pixels, onto `context`, stretched to
-// fill `targetWidth` × `targetHeight`. The region may reach past the
-// source's edges: only the part inside is copied, and the rest of `context`
-// keeps what is already there. (Browsers don't agree on what to do when
-// asked to copy from outside a canvas; older Safari copies nothing at all.)
-export function copyRegion(context, source, region, targetWidth, targetHeight) {
-  const scaleX = targetWidth / region.width;
-  const scaleY = targetHeight / region.height;
-  const left = Math.max(0, region.left);
-  const top = Math.max(0, region.top);
-  const right = Math.min(source.width, region.left + region.width);
-  const bottom = Math.min(source.height, region.top + region.height);
-  if (right <= left || bottom <= top) return;
-  context.drawImage(
-    source,
-    left, top, right - left, bottom - top,
-    (left - region.left) * scaleX, (top - region.top) * scaleY, (right - left) * scaleX, (bottom - top) * scaleY,
-  );
-}

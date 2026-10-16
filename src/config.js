@@ -14,12 +14,6 @@ export const projectTitle = 'Anchorglyph';
 // A short line about the project, on the right of the title bar and below
 // the name at the bottom of the start screen.
 export const projectSubtitle = 'Experimental Type Tool';
-// The line at the top right of the poster (the Poster button in the
-// library's preview, see src/lib/poster.js).
-export const posterTagline = 'Generative Typography';
-// The large letters at the bottom right of the poster, one line each,
-// from top to bottom. They run off the page on the right.
-export const posterLetters = ['AN', 'GH'];
 
 // The font for 'Glyph' mode: a file in the fonts folder, written without its
 // extension. Leave it as '' to use whichever font comes first alphabetically.

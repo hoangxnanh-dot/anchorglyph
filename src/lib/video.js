@@ -26,14 +26,8 @@
 // took to draw it: the video plays smoothly, at the speed the drawing has
 // on a computer that keeps up.
 //
-// The part cut out may reach past the canvas's edges. paintBehind(context,
-// width, height), if given, paints each frame first (the sketch paints
-// its background), so those parts aren't left empty.
-//
 // Browsers without WebCodecs (or without H.264 in it) record nothing, and
 // snapshot() gives back null.
-
-import { copyRegion } from './export.js';
 
 // How many frames the video shows per second.
 const FRAMES_PER_SECOND = 60;
@@ -60,7 +54,7 @@ const READ_AHEAD = 8;
 // Every MP4 box starts with 8 bytes: its size and its four-letter name.
 const BOX_HEADER_SIZE = 8;
 
-export function createVideoRecorder({ height, paintBehind = null }) {
+export function createVideoRecorder({ height }) {
   const supported = typeof VideoEncoder !== 'undefined';
   // the frames are drawn onto this canvas at the video's size first
   const frameCanvas = document.createElement('canvas');
@@ -161,9 +155,7 @@ export function createVideoRecorder({ height, paintBehind = null }) {
     if (encoder.state !== 'configured') return false;
     if (encoder.encodeQueueSize > MAX_WAITING_FRAMES) return false;
 
-    paintBehind?.(frameContext, frameCanvas.width, frameCanvas.height);
-    const region = { left, top, width: sourceWidth, height: sourceHeight };
-    copyRegion(frameContext, source, region, frameCanvas.width, frameCanvas.height);
+    frameContext.drawImage(source, left, top, sourceWidth, sourceHeight, 0, 0, frameCanvas.width, frameCanvas.height);
     const frameDuration = MICROSECONDS_PER_SECOND / FRAMES_PER_SECOND;
     const frame = new VideoFrame(frameCanvas, {
       timestamp: Math.round(frameCount * frameDuration),
