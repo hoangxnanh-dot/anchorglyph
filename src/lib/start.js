@@ -7,6 +7,11 @@
 // the drawing glides to its place in the middle. Clicking the project's name
 // in the title bar brings the start screen back, the same way in reverse.
 //
+// On a narrow window (a phone) the cards sit below the drawing in a
+// carousel that scrolls up and down, one card fully in view at a time. The
+// card that comes to rest in the middle is shown in the drawing; tapping it
+// picks the mode, tapping a half-hidden one brings it to the middle.
+//
 // The sketch decides what happens. It passes:
 //   modes          the mode names, in the order of the cards
 //   startingMode   the card that is lit up at first
@@ -71,24 +76,87 @@ export function createStartScreen({ modes, startingMode, onPreview, onChoose, sw
     arrow.innerHTML = ARROW_ICON;
     card.append(label, name, arrow);
 
-    card.addEventListener('pointerenter', () => preview(mode));
-    card.addEventListener('focus', () => preview(mode));
-    card.addEventListener('click', () => choose(mode));
+    // on a narrow window the carousel decides what is on show, not the
+    // mouse, so resting on a card there does nothing
+    card.addEventListener('pointerenter', () => {
+      if (!isNarrow()) preview(mode);
+    });
+    card.addEventListener('focus', () => {
+      preview(mode);
+      if (isNarrow()) scrollToCard(card, 'smooth');
+    });
+    // in the carousel, a click on a card cut off at the top or bottom brings
+    // it to the middle first; a click on the one in the middle picks it
+    card.addEventListener('click', () => {
+      if (isNarrow() && card !== middleCard()) scrollToCard(card, 'smooth');
+      else choose(mode);
+    });
     return card;
+  });
+  // On a narrow window the cards sit in a carousel that scrolls up and down:
+  // one card fully in view, with a slice of the ones above and below it.
+  // On a wide window it steps aside (see index.html), and the cards are
+  // stacked as before.
+  const carousel = document.createElement('div');
+  carousel.className = 'start-mode-carousel';
+  carousel.append(...cards);
+  // the card that comes to rest in the middle is shown in the drawing.
+  // requestAnimationFrame checks once per frame, however often the
+  // carousel reports that it scrolled.
+  let scrollCheckPending = false;
+  carousel.addEventListener('scroll', () => {
+    if (scrollCheckPending) return;
+    scrollCheckPending = true;
+    requestAnimationFrame(() => {
+      scrollCheckPending = false;
+      const mode = modes[cards.indexOf(middleCard())];
+      if (mode !== shownMode) preview(mode);
+    });
   });
   // the switches, below each other above the cards
   const switchButtons = switches.map(createSwitchButton);
   const switchRow = document.createElement('div');
   switchRow.className = 'start-switches';
   switchRow.append(...switchButtons.map((switchButton) => switchButton.element));
-  cardList.append(switchRow, ...cards);
+  cardList.append(switchRow, carousel);
 
   screen.append(stage, cardList);
   document.body.appendChild(screen);
 
-  // the card of the mode on show is lit up
+  // the mode on show in the drawing; its card is lit up
+  let shownMode = startingMode;
   function lightUp(mode) {
+    shownMode = mode;
     cards.forEach((card, index) => card.classList.toggle('is-active', modes[index] === mode));
+  }
+
+  // src/lib/panels.js decides whether the window is narrow
+  function isNarrow() {
+    return document.body.classList.contains('is-narrow');
+  }
+
+  // The card closest to the carousel's middle line
+  function middleCard() {
+    const middle = carousel.scrollTop + carousel.clientHeight / 2;
+    let closest = cards[0];
+    for (const card of cards) {
+      const cardMiddle = card.offsetTop + card.offsetHeight / 2;
+      const closestMiddle = closest.offsetTop + closest.offsetHeight / 2;
+      if (Math.abs(cardMiddle - middle) < Math.abs(closestMiddle - middle)) closest = card;
+    }
+    return closest;
+  }
+
+  // Scrolls the carousel so `card` sits in its middle. `behavior` is
+  // 'smooth' to glide there, or 'instant' to jump.
+  function scrollToCard(card, behavior) {
+    const top = card.offsetTop - (carousel.clientHeight - card.offsetHeight) / 2;
+    carousel.scrollTo({ top, behavior });
+  }
+
+  // the lit-up card in the carousel's middle, without a glide
+  function centerShownCard() {
+    if (isNarrow()) scrollToCard(cards[modes.indexOf(shownMode)], 'instant');
   }
 
   function preview(mode) {
@@ -117,6 +185,7 @@ export function createStartScreen({ modes, startingMode, onPreview, onChoose, sw
   function open(mode) {
     lightUp(mode);
     setOpen(true);
+    centerShownCard();
   }
 
   // While the start screen is open, the keys are its own: no key reaches the
@@ -128,6 +197,10 @@ export function createStartScreen({ modes, startingMode, onPreview, onChoose, sw
   }, true);
 
   lightUp(startingMode);
+  // once the page is laid out, and whenever the window changes size (it may
+  // turn narrow), the lit-up card goes to the carousel's middle
+  requestAnimationFrame(centerShownCard);
+  window.addEventListener('resize', centerShownCard);
 
   function updateSwitches() {
     for (const switchButton of switchButtons) switchButton.updateDisplay();

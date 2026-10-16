@@ -47,14 +47,13 @@
 //
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
-// Randomize All       New grid, anchors, spline, colors, gradient, drift and
-//                     speed at once. In 'Glyph' it also types a new text of
-//                     1 to 3 characters.
+// Randomize All       New grid and grid slant, anchors, spline, colors,
+//                     gradient, drift and speed at once. In 'Glyph' it
+//                     also types a new text of 1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
-// Clear / Restore     Remove every anchor. In 'Glyph' it is called Restore
-//                     and brings back the anchors of the text instead.
+// Restore             Only in 'Glyph': brings back the anchors of the text.
 //
 // Modes: Glyph | Shape | Animation
 //                     'Glyph' uses the anchor points of the text, read from the font file.
@@ -76,9 +75,10 @@
 //                     bar shows how far the Animation loop has come; drag
 //                     it to jump to another moment of the loop.
 // R – Randomize All   Randomize EVERYTHING.
-// C – Reset All       Every setting back to how the sketch opens (same as
-//                     the Reset All button), Single view included. The
-//                     mode and Invert stay.
+// C – Clear           Every setting back to how the sketch opens, and every
+//                     anchor removed (same as the Clear button below
+//                     Controls), Single view included. The mode and
+//                     Invert stay.
 // Left / Right        New random anchors (same as the Anchors arrows), not in 'Glyph'.
 // S – Save Iteration  Keep the drawing in the library (same as the library's
 //                     Save Iteration button). It also keeps a video of the
@@ -114,18 +114,17 @@ import { traceOutlines, outlinesToPathData } from './lib/trace.js';
 import { createVideoRecorder, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
-  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, RESET_ICON,
+  RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, CLEAR_ICON,
 } from './lib/icons.js';
 
-// The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
-// builds up slowly and the anchors stay calm.
-const STARTING_SPEED = 0.375;
+// The speed the sketch opens with: the middle of the Speed slider
+// (speedRange below), so there is as much room to go slower as faster.
+const STARTING_SPEED = 1.5;
 // At this speed the anchors drift by the normal amount; faster speeds shake
 // them more, slower ones calm them down.
 const NORMAL_SPEED = 1.5;
-// The range of the Speed slider in the Drift folder. It goes low enough to
-// hold the starting speed.
-const speedRange = { min: 0.1, max: 2.5, step: 0.05 };
+// The range of the Speed slider in the Drift folder.
+const speedRange = { min: 0.5, max: 2.5, step: 0.05 };
 // The range of the Drift slider above it, in cells: how far an anchor may
 // wander from its spot. Anchors never leave the grid, whatever the setting.
 const driftReachRange = { min: 0.5, max: 10, step: 0.5 };
@@ -216,7 +215,7 @@ const uiParams = {
   textureWeight: 2,
   paintMode: 'Line',   // 'Line' = ink along the curve, 'Fill' = ink inside it
   speed: STARTING_SPEED, // drawing steps per frame, and how hard anchors shake
-  driftReach: 2.625,   // how far anchors may wander (or swing, in Animation), in cells
+  driftReach: 5,       // how far anchors may wander (or swing, in Animation), in cells
   curvature: 0,        // -1 = sharp corners, 0 = the normal smooth curve, 1 = bends swing out further
 
   // fixed: these are not in the control panel
@@ -243,7 +242,7 @@ const uiParams = {
   backgroundEndColor,
 };
 
-// A copy of every value as the sketch opens with it, for "Reset All". It is a
+// A copy of every value as the sketch opens with it, for "Clear". It is a
 // real copy (structuredClone), so changing a color later doesn't change it.
 const startingParams = structuredClone(uiParams);
 
@@ -335,7 +334,7 @@ const RESTLESSNESS_MAX = 20;
 // Base shake per step, in pixels.
 const DRIFT_STEP = 0.005;
 // Base wander per step, in pixels. At the starting speed an average anchor
-// travels about 0.17 cells per second.
+// travels about 0.7 cells per second.
 const WANDER_STEP = 0.006;
 // How much the heading may turn per step, as an angle. Bigger values make
 // winding paths, smaller ones straighter paths.
@@ -502,6 +501,9 @@ let library;
 // The buttons in the title bar that fold the panels away, see
 // src/lib/panels.js.
 let panelButtons;
+// Whether the library has slid in by itself after a save on a narrow
+// window yet. It only does so once per visit, see saveToLibrary().
+let hasShownLibraryAfterSave = false;
 // The title bar across the top of the window, see createTopBar(), and how
 // tall it is. The height is measured once: a hidden bar measures 0.
 let topBar;
@@ -542,7 +544,7 @@ let columnsController;
 let rowsController;
 let anchorCountController;
 let randomAnchorsIcon;
-let clearController;
+let restoreController;
 let gridEye;
 let anchorsEye;
 let lineWidthController;
@@ -1139,19 +1141,6 @@ function changeAnchorCount() {
 
 function shuffleOrder() {
   shuffle(anchors, true);
-  restartDrawing();
-}
-
-// The Clear button. In 'Shape' and 'Animation' it removes every anchor but
-// stays in the current mode. In 'Glyph' it is called Restore: it builds the
-// anchors again from the text in "Type here", undoing anchors you moved,
-// added or removed by hand.
-function clearGrid() {
-  if (uiParams.anchorMode === 'Glyph') {
-    updateFontAnchors();
-    return;
-  }
-  anchors = [];
   restartDrawing();
 }
 
@@ -2312,7 +2301,7 @@ window.mousePressed = function mousePressed(event) {
   // Multiple view: a click on an iteration saves it to the library
   if (isMultipleView()) {
     const index = iterationUnderMouse();
-    if (index >= 0) library.save(() => captureIteration(index));
+    if (index >= 0) saveToLibrary(() => captureIteration(index));
     return;
   }
 
@@ -2404,15 +2393,16 @@ window.addEventListener('keydown', (event) => {
     // in 'Glyph' the text sets the anchors, so there is nothing to randomize
     if (uiParams.anchorMode !== 'Glyph') randomAnchors();
   } else if (event.key.toLowerCase() === 'r') {
-    // same as the "Randomize All" button: grid, anchors, spline, colors, drift
-    // and speed, and in 'Glyph' a new text
+    // same as the "Randomize All" button: grid, slant, anchors, spline,
+    // colors, drift and speed, and in 'Glyph' a new text
     randomizeAll();
   } else if (event.key.toLowerCase() === 'c') {
-    // same as the "Reset All" button: every setting back to how the sketch opens
-    resetEverything();
+    // same as the "Clear" button: every setting back to how the sketch
+    // opens, and every anchor removed
+    clearEverything();
   } else if (event.key.toLowerCase() === 's') {
     // same as the library's "Save Iteration" button, flash and slide included
-    library.save();
+    saveToLibrary();
   } else if (event.key.toLowerCase() === 't') {
     toggleAllFolders();
   } else if (event.key === 'g') {
@@ -2461,13 +2451,13 @@ function updateGuideControls() {
 // The text and size controls only do something in 'Glyph' mode, so the
 // panel only shows them then. In 'Glyph' the text sets the anchors, so the
 // Anchor Points slider and the anchors' Randomize arrows are hidden there,
-// and Clear becomes Restore.
+// and Restore shows instead.
 function showModeControls() {
   const isGlyph = uiParams.anchorMode === 'Glyph';
   for (const controller of glyphControllers) controller.show(isGlyph);
   anchorCountController.show(!isGlyph);
   randomAnchorsIcon.show(!isGlyph);
-  clearController.name(isGlyph ? 'Restore' : 'Clear');
+  restoreController.show(isGlyph);
   iterationsPerRowController.show(isMultipleView());
 }
 
@@ -2559,14 +2549,17 @@ function randomizeDrift() {
   refreshPanel();
 }
 
-// "Randomize All": grid, anchors, spline, colors, gradient, drift and speed
-// at once. In 'Glyph' the text is new too; in the other modes it stays. The
-// mode always stays.
+// "Randomize All": grid and its slant, anchors, spline, colors, gradient,
+// drift and speed at once. In 'Glyph' the text is new too; in the other
+// modes it stays. The mode always stays.
 function randomizeAll() {
   // before the grid, so the anchors are built once, from the new text on
   // the new grid
   if (uiParams.anchorMode === 'Glyph') randomizeText();
   randomizeGrid();
+  // only here, not on the Grid arrows: a new lean for the grid. The colors
+  // below refresh the panel, so the Slant slider shows it.
+  uiParams.gridSlant = randomSliderValue(gridSlantRange);
   randomizeSpline();
   // before the colors, which refresh the panel, so it shows both
   randomizeGradient();
@@ -2608,10 +2601,10 @@ function randomizeGradientSettings() {
 
 // Puts everything back the way the sketch opens: every value in the panel,
 // the colors and the guides, the view (back to Single, and Per Row to its
-// start), with fresh anchors and a running animation. Only the mode and
-// the Invert switch stay: in 'Glyph' the anchors come from the (reset)
-// text, in 'Shape' and 'Animation' they are new random ones.
-function resetEverything() {
+// start), and a running animation. Every anchor is removed too, in every
+// mode, so you start from an empty grid and click your own anchors in.
+// Only the mode and the Invert switch stay.
+function clearEverything() {
   const { anchorMode: mode, invertColors: isInverted } = uiParams;
   for (const [settingName, value] of Object.entries(startingParams)) {
     uiParams[settingName] = structuredClone(value);
@@ -2627,12 +2620,12 @@ function resetEverything() {
   uiParams.anchorCount = anchorCountPerMode[lastGridMode];
   refreshPanel();
 
-  if (mode === 'Glyph') updateFontAnchors();
-  else randomAnchors();
+  anchors = [];
+  restartDrawing();
 }
 
 // The panel doesn't notice values changed in code, so every control is told
-// to show its value again. Used by "Reset All", the Randomize arrows and by
+// to show its value again. Used by "Clear", the Randomize arrows and by
 // loading from the library.
 function refreshPanel() {
   panel.controllersRecursive().forEach((controller) => controller.updateDisplay());
@@ -3158,7 +3151,7 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
   glyphControllers = moveTextControlsTo(modes);
 
   // the Controls headline between the modes and the folders, with
-  // Randomize All and Reset All below it
+  // Randomize All and Clear below it
   addControlsSection(gui);
 
   // Main, Accent and Background are made by src/lib/gui.js, and moved here.
@@ -3197,8 +3190,10 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
     .name('Anchor Points')
     .onChange(changeAnchorCount);
   anchorsFolder.add({ shuffleOrder }, 'shuffleOrder').name('Iterate');
-  // its name follows the mode, see showModeControls()
-  clearController = anchorsFolder.add({ clearGrid }, 'clearGrid').name('Clear');
+  // Restore, only in 'Glyph' (see showModeControls()): builds the anchors
+  // again from the text in "Type here", undoing anchors you moved, added or
+  // removed by hand. To remove every anchor, there is Clear below Controls.
+  restoreController = anchorsFolder.add({ updateFontAnchors }, 'updateFontAnchors').name('Restore');
 
   const splinesFolder = gui.addFolder('Splines');
   addRandomizeIcon(splinesFolder, randomizeSpline);
@@ -3304,7 +3299,7 @@ function addControlsSection(gui) {
   actions.className = 'panel-section-actions';
   actions.append(
     makeButton('Randomize All', randomizeAll, RANDOMIZE_ICON),
-    makeButton('Reset All', resetEverything, RESET_ICON),
+    makeButton('Clear', clearEverything, CLEAR_ICON),
   );
   gui.$children.append(heading, actions);
 }
@@ -3394,10 +3389,25 @@ function updatePlaybackProgress() {
   playbackControls.forEach((controls) => controls.showProgress(share, isLooping));
 }
 
+// Saves to the library, like its Save Iteration button: the Save button in
+// the dock, the s key and a click on an iteration all come here. On a
+// narrow window the library is folded away, so the first save of a visit
+// slides it in once the flash has faded, to show where saved iterations
+// go. After that it stays folded, so saving doesn't cover the drawing each
+// time. `captureWith` is passed on to library.save() (see
+// src/lib/library.js).
+function saveToLibrary(captureWith) {
+  library.save(captureWith);
+  if (panelButtons.isNarrow() && !hasShownLibraryAfterSave) {
+    hasShownLibraryAfterSave = true;
+    library.afterFlash().then(() => panelButtons.open('library'));
+  }
+}
+
 // THE DOCK, below the grid on a narrow window (a phone, or a tablet held
 // upright), where the panels are folded away: the loop bar, centred under
 // the grid, and below it six buttons in two rows. Restart, Play/Pause and
-// Stop on top, Randomize All, Save Iteration and Reset All below. They do
+// Stop on top, Randomize All, Save Iteration and Clear below. They do
 // the same as the buttons in the panels. fitView() places it; its look is
 // in index.html, under "the dock".
 function createDock() {
@@ -3409,8 +3419,8 @@ function createDock() {
     pauseButton,
     stopButton,
     makeButton('Randomize', randomizeAll, RANDOMIZE_ICON),
-    makeButton('Save', () => library.save(), SAVE_ICON),
-    makeButton('Reset', resetEverything, RESET_ICON),
+    makeButton('Save', () => saveToLibrary(), SAVE_ICON),
+    makeButton('Clear', clearEverything, CLEAR_ICON),
   );
 
   const element = document.createElement('div');
