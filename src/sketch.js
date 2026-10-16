@@ -48,8 +48,8 @@
 // Arrows icon         (crossing arrows) New random values for the folder whose
 //                     title it sits in.
 // Randomize All       New grid and grid slant, anchors, spline, colors,
-//                     gradient, drift and speed at once. In 'Glyph' it also types a new text of
-//                     1 to 3 characters.
+//                     gradient, drift and speed at once. In 'Glyph' it
+//                     also types a new text of 1 to 3 characters.
 // Dots (···)          On the Controls headline: close every folder, or open
 //                     them all again (same as the T key).
 // Iterate             Keep the same cells, connect them in a new order.
@@ -215,7 +215,7 @@ const uiParams = {
   textureWeight: 2,
   paintMode: 'Line',   // 'Line' = ink along the curve, 'Fill' = ink inside it
   speed: STARTING_SPEED, // drawing steps per frame, and how hard anchors shake
-  driftReach: 5,       // how far anchors may wander (or swing, in Animation), in cells; about the middle of its slider
+  driftReach: 5,       // how far anchors may wander (or swing, in Animation), in cells
   curvature: 0,        // -1 = sharp corners, 0 = the normal smooth curve, 1 = bends swing out further
 
   // fixed: these are not in the control panel
@@ -961,13 +961,6 @@ function changeAnchorCount() {
 function shuffleOrder() {
   shuffle(anchors, true);
   restartDrawing();
-}
-
-// The Restore button, only in 'Glyph': it builds the anchors again from the
-// text in "Type here", undoing anchors you moved, added or removed by hand.
-// (To remove every anchor, use Clear below Controls.)
-function restoreTextAnchors() {
-  updateFontAnchors();
 }
 
 // After columns or rows change. In 'Shape' and 'Animation' only the anchors
@@ -2189,8 +2182,8 @@ window.addEventListener('keydown', (event) => {
     // in 'Glyph' the text sets the anchors, so there is nothing to randomize
     if (uiParams.anchorMode !== 'Glyph') randomAnchors();
   } else if (event.key.toLowerCase() === 'r') {
-    // same as the "Randomize All" button: grid, slant, anchors, spline, colors, drift
-    // and speed, and in 'Glyph' a new text
+    // same as the "Randomize All" button: grid, slant, anchors, spline,
+    // colors, drift and speed, and in 'Glyph' a new text
     randomizeAll();
   } else if (event.key.toLowerCase() === 'c') {
     // same as the "Clear" button: every setting back to how the sketch
@@ -2346,8 +2339,8 @@ function randomizeDrift() {
 }
 
 // "Randomize All": grid and its slant, anchors, spline, colors, gradient,
-// drift and speed at once. In 'Glyph' the text is new too; in the other modes it stays. The
-// mode always stays.
+// drift and speed at once. In 'Glyph' the text is new too; in the other
+// modes it stays. The mode always stays.
 function randomizeAll() {
   // before the grid, so the anchors are built once, from the new text on
   // the new grid
@@ -2899,8 +2892,10 @@ function addControls(gui, { moveTextControlsTo, moveColorControlsTo }) {
     .name('Anchor Points')
     .onChange(changeAnchorCount);
   anchorsFolder.add({ shuffleOrder }, 'shuffleOrder').name('Iterate');
-  // only shows in 'Glyph', see showModeControls()
-  restoreController = anchorsFolder.add({ restoreTextAnchors }, 'restoreTextAnchors').name('Restore');
+  // Restore, only in 'Glyph' (see showModeControls()): builds the anchors
+  // again from the text in "Type here", undoing anchors you moved, added or
+  // removed by hand. To remove every anchor, there is Clear below Controls.
+  restoreController = anchorsFolder.add({ updateFontAnchors }, 'updateFontAnchors').name('Restore');
 
   const splinesFolder = gui.addFolder('Splines');
   addRandomizeIcon(splinesFolder, randomizeSpline);
@@ -3096,12 +3091,6 @@ function updatePlaybackProgress() {
   playbackControls.forEach((controls) => controls.showProgress(share, isLooping));
 }
 
-// THE DOCK, below the grid on a narrow window (a phone, or a tablet held
-// upright), where the panels are folded away: the loop bar, centred under
-// the grid, and below it six buttons in two rows. Restart, Play/Pause and
-// Stop on top, Randomize All, Save Iteration and Clear below. They do
-// the same as the buttons in the panels. fitView() places it; its look is
-// in index.html, under "the dock".
 // Saves to the library, like its Save Iteration button: the Save button in
 // the dock, the s key and a click on an iteration all come here. On a
 // narrow window the library is folded away, so the first save of a visit
@@ -3116,6 +3105,12 @@ function saveToLibrary(captureWith) {
   }
 }
 
+// THE DOCK, below the grid on a narrow window (a phone, or a tablet held
+// upright), where the panels are folded away: the loop bar, centred under
+// the grid, and below it six buttons in two rows. Restart, Play/Pause and
+// Stop on top, Randomize All, Save Iteration and Clear below. They do
+// the same as the buttons in the panels. fitView() places it; its look is
+// in index.html, under "the dock".
 function createDock() {
   const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
   const buttons = document.createElement('div');
