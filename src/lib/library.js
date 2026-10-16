@@ -56,7 +56,7 @@
 
 import { screenshotName, variationName, variationDigits } from '../config.js';
 import { saveToDownloads, saveAllToDownloads, timestamp } from './export.js';
-import { makeButton, makeIconButton, createProjectFooter } from './gui.js';
+import { makeButton, makeIconButton } from './gui.js';
 import {
   ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
 } from './icons.js';
@@ -190,10 +190,7 @@ export function createLibrary({ capture, apply }) {
   const list = document.createElement('ul');
   list.className = 'library-list';
 
-  // the project's mark, name and subtitle at the bottom of the library
-  const footer = createProjectFooter('library-footer');
-
-  panel.append(title, saveButton, selectionActions, selectedActions, divider, emptyMessage, list, footer);
+  panel.append(title, saveButton, selectionActions, selectedActions, divider, emptyMessage, list);
   document.body.appendChild(panel);
 
   // the white layer for the flash. It covers the drawing but sits below the

@@ -225,8 +225,8 @@
       }
 
       /* THE SMALL LABELS in capitals, like on a technical drawing: in the
-         title bar, around the grid, on the start screen, at the bottom of
-         the library and in the large preview */
+         title bar, around the grid, on the start screen and in the large
+         preview */
       .top-bar-brand,
       .top-bar-subtitle,
       .start-mode-label,
@@ -238,13 +238,11 @@
         letter-spacing: calc(var(--label-tracking) + var(--text-tracking));
         text-transform: uppercase;
       }
-      /* THE PROJECT'S MARK AND NAME at the bottom left, the same on the
-         start screen and at the bottom of the library: the dots, and next
-         to them the name with the subtitle below it. Made by
-         createProjectFooter() in src/lib/gui.js. Both sit
-         --footer-bottom-gap above the window's bottom edge. The library's
-         is the panel's padding in from the left edge, the start screen's
-         is --start-margin in, in line with the headline. */
+      /* THE PROJECT'S MARK AND NAME at the bottom left of the start
+         screen: the dots, and next to them the name with the subtitle
+         below it. Made by createProjectFooter() in src/lib/gui.js. It sits
+         --footer-bottom-gap above the window's bottom edge and
+         --start-margin in from the left, in line with the headline. */
       :root {
         --footer-bottom-gap: 24px;
       }
@@ -1111,8 +1109,7 @@
          and the list scroll. */
       .library-save,
       .library-selection-actions,
-      .library-divider,
-      .library-footer {
+      .library-divider {
         flex-shrink: 0;
       }
 
@@ -1293,13 +1290,6 @@
       }
       .library-load:hover {
         background: var(--card-color);
-      }
-
-      /* the project's mark, name and subtitle at the bottom of the library
-         (see "the project's mark and name") */
-      .library-footer {
-        margin-top: auto;
-        padding: 20px var(--panel-padding) var(--footer-bottom-gap);
       }
 
       /* FOLDED PANELS: the buttons at the ends of the title bar slide the

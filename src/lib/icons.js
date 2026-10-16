@@ -69,7 +69,7 @@ export const PAUSE_ICON = lineIcon('<rect x="6" y="4" width="4" height="16" fill
 export const STOP_ICON = lineIcon('<rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/>');
 
 // A square of dots, `dotsPerSide` across and down, `size` pixels wide: the
-// project's mark at the bottom of the library, and the Grid button's
+// project's mark at the bottom of the start screen, and the Grid button's
 // icon. The dots sit in the middle of equal cells.
 export function dotGridIcon(dotsPerSide = MARK_DOTS, size = ICON_SIZE) {
   const cell = ICON_FIELD / dotsPerSide;
