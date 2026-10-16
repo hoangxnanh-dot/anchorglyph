@@ -59,8 +59,9 @@
 import { screenshotName, variationName, variationDigits, exportSize } from '../config.js';
 import { saveToDownloads, saveAllToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton } from './gui.js';
+import { makePoster } from './poster.js';
 import {
-  ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
+  ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, POSTER_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
 } from './icons.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
@@ -275,6 +276,9 @@ export function createLibrary({ capture, apply }) {
   const videoButton = makeButton('MP4', () => exportPreview('mp4'), VIDEO_ICON);
   // set while an MP4 is being made, see exportVideo()
   let videoExporting = false;
+  // the variation on a ready-made A3 poster, as a PDF (see src/lib/poster.js)
+  const posterButton = makeButton('Poster', () => exportPreview('pdf'), POSTER_ICON);
+  posterButton.title = 'The iteration on a poster, as a PDF file';
   const previewSettings = document.createElement('div');
   previewSettings.className = 'library-preview-bar';
   previewSettings.append(guideButtons);
@@ -286,6 +290,7 @@ export function createLibrary({ capture, apply }) {
     resolutionField,
     makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
     makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
+    posterButton,
     videoButton,
   );
   const previewFooter = document.createElement('div');
@@ -570,9 +575,9 @@ export function createLibrary({ capture, apply }) {
     return shown;
   }
 
-  // PNG and SVG in the preview: the file looks like the preview, with or
-  // without the background, and with the guides that are showing drawn on
-  // top of the drawing.
+  // PNG, SVG and the poster's PDF in the preview: the file looks like the
+  // preview, with or without the background, and with the guides that are
+  // showing drawn on top of the drawing.
   async function exportPreview(format) {
     const variation = previewVariation;
     const filename = exportFileName(variation, format, 1);
@@ -589,8 +594,14 @@ export function createLibrary({ capture, apply }) {
     const drawing = await previewSVGText(variation);
     const end = drawing.lastIndexOf('</svg>');
     const shapes = visibleGuides().map((guide) => guide.slice(guide.indexOf('>') + 1, guide.lastIndexOf('</svg>')));
-    const combined = new Blob([drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end)], { type: 'image/svg+xml' });
+    const combinedText = drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end);
 
+    if (format === 'pdf') {
+      await exportPoster(combinedText, filename);
+      return;
+    }
+
+    const combined = new Blob([combinedText], { type: 'image/svg+xml' });
     if (format === 'svg') {
       saveToDownloads(combined, filename);
       return;
@@ -625,6 +636,22 @@ export function createLibrary({ capture, apply }) {
     canvas.height = height;
     canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
     return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  // The poster: the drawing (`svgText`, as the preview shows it) on the
+  // poster, and below the picture the file's name without the project's
+  // name in front, like "// V-01-261016-1101-1". Making it takes a moment,
+  // during which the button doesn't take another click.
+  async function exportPoster(svgText, filename) {
+    if (posterButton.disabled) return;
+    posterButton.disabled = true;
+    try {
+      const nameWithoutProject = filename.slice(`${screenshotName}-`.length, filename.lastIndexOf('.'));
+      const file = await makePoster({ svgText, label: `// ${nameWithoutProject}` });
+      saveToDownloads(file, filename);
+    } finally {
+      posterButton.disabled = false;
+    }
   }
 
   // MP4 is greyed out while Background is off: a video can't be
