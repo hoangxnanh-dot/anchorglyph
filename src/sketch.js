@@ -3094,14 +3094,15 @@ function updatePlaybackProgress() {
 // Saves to the library, like its Save Iteration button: the Save button in
 // the dock, the s key and a click on an iteration all come here. On a
 // narrow window the library is folded away, so the first save of a visit
-// slides it in, to show where saved iterations go. After that it stays
-// folded, so saving doesn't cover the drawing each time. `captureWith` is
-// passed on to library.save() (see src/lib/library.js).
+// slides it in once the flash has faded, to show where saved iterations
+// go. After that it stays folded, so saving doesn't cover the drawing each
+// time. `captureWith` is passed on to library.save() (see
+// src/lib/library.js).
 function saveToLibrary(captureWith) {
   library.save(captureWith);
   if (panelButtons.isNarrow() && !hasShownLibraryAfterSave) {
     hasShownLibraryAfterSave = true;
-    panelButtons.open('library');
+    library.afterFlash().then(() => panelButtons.open('library'));
   }
 }
 
