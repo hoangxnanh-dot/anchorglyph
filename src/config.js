@@ -9,10 +9,10 @@
 export const screenshotName = 'Anchorglyph';
 
 // The project's name: on the left of the title bar across the top of the
-// window, and at the bottom of the library.
+// window, and at the bottom of the start screen.
 export const projectTitle = 'Anchorglyph';
 // A short line about the project, on the right of the title bar and below
-// the name at the bottom of the library.
+// the name at the bottom of the start screen.
 export const projectSubtitle = 'Experimental Type Tool';
 
 // The font for 'Glyph' mode: a file in the fonts folder, written without its

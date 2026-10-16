@@ -383,9 +383,8 @@ export function setButtonIcon(button, icon, label) {
 }
 
 // The project's mark, and next to it its name with the subtitle below, from
-// src/config.js: at the bottom of the library and of the start screen, the
-// same in both. `className` places it; the look is in index.html, under
-// "the project's mark and name".
+// src/config.js: at the bottom of the start screen. `className` places it;
+// the look is in index.html, under "the project's mark and name".
 export function createProjectFooter(className) {
   const footer = document.createElement('div');
   footer.className = `project-footer ${className}`;
