@@ -45,10 +45,12 @@
 //                 a Promise of the MP4 file (Blob)
 //   apply(data)   rebuilds the drawing from that data
 //
-// The library gives back { element, toggle, save, resolution }. save() does
-// what Save Iteration does; save(otherCapture) saves what otherCapture()
-// gives back instead, with the same flash and slide. resolution() is how
-// many pixels tall a PNG from the preview gets, as picked there.
+// The library gives back { element, toggle, save, afterFlash, resolution }.
+// save() does what Save Iteration does; save(otherCapture) saves what
+// otherCapture() gives back instead, with the same flash and slide.
+// afterFlash() is a Promise that is kept once the last save's flash has
+// faded. resolution() is how many pixels tall a PNG from the preview gets,
+// as picked there.
 //
 //   const library = createLibrary({ capture, apply });
 //
@@ -64,10 +66,12 @@ import {
 // Saving shows a short flash in the accent color over the drawing, like a
 // camera, and the new card slides down into the list from above while the
 // cards below it make room.
-// How bright the flash starts (0 = invisible, 1 = solid color) and how long
-// it takes to fade, in milliseconds.
+// How bright the flash gets (0 = invisible, 1 = solid color), how long it
+// lasts in all, in milliseconds, and how soon it is at its brightest, as a
+// share of that time: it rises quickly, then fades out slowly.
 const FLASH_OPACITY = 0.7;
-const FLASH_DURATION = 400;
+const FLASH_DURATION = 500;
+const FLASH_PEAK = 0.15;
 // How long the cards take to slide into place, in milliseconds.
 const SLIDE_DURATION = 700;
 // The easing of the slide, as CSS writes it: fast at first, then slowing
@@ -333,14 +337,26 @@ export function createLibrary({ capture, apply }) {
     slideCards(variation.id, placesBefore);
   }
 
-  // The flash: the white layer appears at once and fades out.
-  // animate() is the browser's own animation tool: it moves from the first
-  // state in the list to the last over `duration`.
+  // The flash: the colored layer rises to its brightest and fades out
+  // again. animate() is the browser's own animation tool: it moves through
+  // the states in the list over `duration`; `offset` is when a state is
+  // reached, as a share of the time. A state's `easing` shapes the change
+  // from it to the next one: 'ease-in-out' softens its start and end, so
+  // there is no hard jump.
+  // The animation is kept, so afterFlash() can wait for it to end.
+  let flashAnimation = null;
   function showFlash() {
-    flash.animate([{ opacity: FLASH_OPACITY }, { opacity: 0 }], {
-      duration: FLASH_DURATION,
-      easing: 'ease-out',
-    });
+    const states = [
+      { opacity: 0, easing: 'ease-in-out' },
+      { opacity: FLASH_OPACITY, offset: FLASH_PEAK, easing: 'ease-in-out' },
+      { opacity: 0 },
+    ];
+    flashAnimation = flash.animate(states, { duration: FLASH_DURATION });
+  }
+
+  // `finished` is the browser's own Promise for the end of an animation
+  function afterFlash() {
+    return flashAnimation ? flashAnimation.finished : Promise.resolve();
   }
 
   // How far down the window each card's top edge is, by variation id.
@@ -784,5 +800,5 @@ export function createLibrary({ capture, apply }) {
     panel.hidden = !panel.hidden;
   }
 
-  return { element: panel, toggle, save: saveCurrent, resolution: () => Number(resolutionField.value) };
+  return { element: panel, toggle, save: saveCurrent, afterFlash, resolution: () => Number(resolutionField.value) };
 }
