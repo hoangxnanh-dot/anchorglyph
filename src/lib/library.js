@@ -640,14 +640,18 @@ export function createLibrary({ capture, apply }) {
 
   // The poster: the drawing (`svgText`, as the preview shows it) on the
   // poster, and below the picture the file's name without the project's
-  // name in front, like "// V-01-261016-1101-1". Making it takes a moment,
-  // during which the button doesn't take another click.
+  // name in front, like "// V–01–261016–1101–1". On the poster the file
+  // name's plain hyphens become en dashes (–), which look better in type;
+  // the file itself keeps hyphens, so every computer accepts its name.
+  // Making it takes a moment, during which the button doesn't take another
+  // click.
   async function exportPoster(svgText, filename) {
     if (posterButton.disabled) return;
     posterButton.disabled = true;
     try {
       const nameWithoutProject = filename.slice(`${screenshotName}-`.length, filename.lastIndexOf('.'));
-      const file = await makePoster({ svgText, label: `// ${nameWithoutProject}` });
+      const label = `// ${nameWithoutProject.replaceAll('-', '–')}`;
+      const file = await makePoster({ svgText, label });
       saveToDownloads(file, filename);
     } finally {
       posterButton.disabled = false;
