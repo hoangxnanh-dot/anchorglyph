@@ -48,9 +48,8 @@ export const EYE_CLOSED_ICON = lineIcon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-1
 export const RANDOMIZE_ICON = lineIcon('<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>');
 // Restart: an arrow turning back on itself
 export const RESTART_ICON = lineIcon('<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>');
-// Reset All: two arrows chasing each other around a circle, so it doesn't
-// look like Restart
-export const RESET_ICON = lineIcon('<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><polyline points="16 16 21 16 21 21"/>');
+// Clear: an eraser, tilted, on the line it wipes clean
+export const CLEAR_ICON = lineIcon('<path d="M7 21l-4.3-4.3a2.4 2.4 0 0 1 0-3.4l9.6-9.6a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21"/><line x1="22" y1="21" x2="7" y2="21"/><line x1="5" y1="11" x2="14" y2="20"/>');
 // More: three dots in a row
 export const MORE_ICON = lineIcon('<circle cx="5" cy="12" r="0.75"/><circle cx="12" cy="12" r="0.75"/><circle cx="19" cy="12" r="0.75"/>');
 

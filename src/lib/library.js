@@ -93,7 +93,7 @@ const SHORTCUTS = [
   { key: 'Space', action: 'Pause / Play' },
   { key: 'S', action: 'Save Iteration' },
   { key: 'R', action: 'Randomize All' },
-  { key: 'C', action: 'Reset All' },
+  { key: 'C', action: 'Clear' },
   { key: '← / →', action: 'Iterate Anchors' },
   { key: 'T', action: 'Open / Close Controls' },
   { key: 'H', action: 'Hide Guides' },
