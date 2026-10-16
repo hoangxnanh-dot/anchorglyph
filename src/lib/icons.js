@@ -54,9 +54,9 @@ export const CLEAR_ICON = lineIcon('<path d="M7 21l-4.3-4.3a2.4 2.4 0 0 1 0-3.4l
 export const MORE_ICON = lineIcon('<circle cx="5" cy="12" r="0.75"/><circle cx="12" cy="12" r="0.75"/><circle cx="19" cy="12" r="0.75"/>');
 
 // The buttons that fold the panels away, at both ends of the title bar.
-// Library: two papers stacked, a sheet in front and the edge of the one
-// behind it.
-export const LIBRARY_ICON = lineIcon('<rect x="3" y="7" width="14" height="14" rx="1.5"/><path d="M7 3h12.5A1.5 1.5 0 0 1 21 4.5V17"/>');
+// Library: three papers stacked, a sheet in front and below it the bottom
+// edges of the two behind it, sticking out one under the other.
+export const LIBRARY_ICON = lineIcon('<rect x="3" y="2" width="18" height="12" rx="1.5"/><path d="M3.5 15.5v1a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-1"/><path d="M3.5 19.5v1a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-1"/>');
 // Controls: three lines, the "menu" sign
 export const MENU_ICON = lineIcon('<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>');
 
