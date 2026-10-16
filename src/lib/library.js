@@ -12,7 +12,7 @@
 //                    picture, Background shows or hides the background
 //                    (a checkerboard shows where it is see-through), and
 //                    PNG and SVG export it as you see it there. The field
-//                    left of PNG sets how many pixels the PNG has. MP4
+//                    left of PNG shows the fixed export size. MP4
 //                    exports the video of the drawing up to the moment it
 //                    was saved, with the grid and anchors that are showing
 //                    (always with its background: a video can't be
@@ -56,7 +56,7 @@
 //
 // The look of the panel is in index.html, under "the library".
 
-import { screenshotName, variationName, variationDigits } from '../config.js';
+import { screenshotName, variationName, variationDigits, exportSize } from '../config.js';
 import { saveToDownloads, saveAllToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton } from './gui.js';
 import { makePoster } from './poster.js';
@@ -461,11 +461,15 @@ export function createLibrary({ capture, apply }) {
   // "Anchorglyph-V-01-260921-1408-1.png". The browser may ask once whether
   // the page is allowed to download several files. On a phone they go to
   // the share sheet instead (see saveAllToDownloads() in src/lib/export.js).
-  function exportSelected(format) {
-    saveAllToDownloads(selectedVariations().map((variation, index) => ({
-      file: format === 'png' ? variation.picture : variation.svg,
+  async function exportSelected(format) {
+    const selected = selectedVariations();
+    const entries = await Promise.all(selected.map(async (variation, index) => ({
+      file: format === 'png'
+        ? await pictureAtHeight(variation.picture, exportSize)
+        : variation.svg,
       filename: exportFileName(variation, format, index + 1),
     })));
+    saveAllToDownloads(entries);
   }
 
   // The name of an exported file. Only letters, digits, - and _ are kept

@@ -41,6 +41,10 @@ export const startingText = '//';
 // window, whatever the window's size.
 export const gridSize = 800;
 
+// PNG and SVG downloads use this height. The drawing stays responsive on
+// screen; only the downloaded artwork is fixed at this resolution.
+export const exportSize = 2400;
+
 // a light paper, with dark ink on it
 export const backgroundColor = { r: 242, g: 242, b: 240 };
 export const foregroundColor = { r: 40, g: 40, b: 40 };
