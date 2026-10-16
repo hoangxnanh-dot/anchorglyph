@@ -1104,13 +1104,26 @@
         border-top: 1px solid var(--line-color);
         margin: 16px var(--panel-padding) 20px;
       }
+      /* The library is a column exactly as tall as the window. When its
+         contents need more room (the long message below, on a short phone),
+         the browser squeezes everything in the column to fit, the Save
+         Iteration button too. These keep their size instead; the message
+         and the list scroll. */
+      .library-save,
+      .library-selection-actions,
+      .library-divider,
+      .library-footer {
+        flex-shrink: 0;
+      }
 
       /* the message while nothing is saved: a dot, a line, and a quieter
-         hint below it */
+         hint below it. If it doesn't fit, it scrolls. */
       .library-empty {
         /* the room above each intro paragraph and above the shortcuts, so
            they are all evenly spaced */
         --intro-gap: 24px;
+        min-height: 0;
+        overflow-y: auto;
         padding: 0 var(--panel-padding);
         line-height: 1.5;
       }
@@ -1168,10 +1181,12 @@
         padding: 0 var(--panel-padding) 16px;
       }
       /* a thin scrollbar, like the control panel's */
-      .library-list::-webkit-scrollbar {
+      .library-list::-webkit-scrollbar,
+      .library-empty::-webkit-scrollbar {
         width: 6px;
       }
-      .library-list::-webkit-scrollbar-thumb {
+      .library-list::-webkit-scrollbar-thumb,
+      .library-empty::-webkit-scrollbar-thumb {
         border-radius: 3px;
         background: var(--button-pressed-color);
       }
@@ -1332,7 +1347,7 @@
       /* THE START SCREEN ON A NARROW WINDOW (a phone, or a tablet held
          upright): the headline at the top, the drawing in the middle,
          exactly where it will be on the main screen, and below it a panel
-         with the switches and the three modes side by side, in the dock's
+         with the switches and the modes in a carousel, in the dock's
          place (src/sketch.js sets --dock-top). Picking a mode slides the
          panel down out of the window, and the dock appears where it was. */
       body.is-narrow .start-screen {
@@ -1381,12 +1396,62 @@
         gap: 20px;
         margin: 0 0 4px;
       }
+      /* THE MODE CAROUSEL (see src/lib/start.js). On a wide window it steps
+         aside, as if it weren't there, and the cards stack as before. On a
+         narrow one it scrolls up and down: one card fully in view in the
+         middle, with --carousel-peek of the card above and below it,
+         fading out towards the edges. Each scroll comes to rest with a
+         card exactly in the middle (scroll-snap), one card at a time. The
+         room above and below the cards lets the first and last card reach
+         the middle too. */
+      .start-mode-carousel {
+        display: contents;
+      }
+      body.is-narrow .start-mode-carousel {
+        --carousel-card-height: 76px;
+        --carousel-peek: 28px;
+        --carousel-gap: 8px;
+        /* room for the focus ring at the sides, which the scrolling would
+           otherwise cut off; the negative margin keeps the cards in line */
+        --carousel-focus-room: 3px;
+        /* the cards measure their place from here (see middleCard()) */
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: var(--carousel-gap);
+        height: calc(var(--carousel-card-height) + 2 * (var(--carousel-peek) + var(--carousel-gap)));
+        padding: calc(var(--carousel-peek) + var(--carousel-gap)) var(--carousel-focus-room);
+        margin: 0 calc(-1 * var(--carousel-focus-room));
+        overflow-y: auto;
+        scroll-snap-type: y mandatory;
+        /* a swipe that reaches the end doesn't move the page behind */
+        overscroll-behavior: contain;
+        scrollbar-width: none;
+        /* the slices of the cards above and below fade out, so the one in
+           the middle stands out */
+        mask-image: linear-gradient(
+          to bottom,
+          rgb(0 0 0 / 0.2),
+          rgb(0 0 0) var(--carousel-peek),
+          rgb(0 0 0) calc(100% - var(--carousel-peek)),
+          rgb(0 0 0 / 0.2)
+        );
+      }
+      body.is-narrow .start-mode-carousel::-webkit-scrollbar {
+        display: none;
+      }
       /* the modes look like on a wide window (the label above the name, the
-         arrow on the right), only with less room above and below and a
-         smaller name, so the three of them leave the drawing in view */
+         arrow on the right), only all as tall as each other, with less room
+         above and below and a smaller name */
       body.is-narrow .start-mode {
+        flex: none;
+        height: var(--carousel-card-height);
+        align-content: center;
         row-gap: 6px;
-        padding: 14px 20px;
+        padding: 0 20px;
+        scroll-snap-align: center;
+        /* a fast swipe still stops at the next card, instead of flying past */
+        scroll-snap-stop: always;
       }
       body.is-narrow .start-mode-name {
         font-size: 24px;
@@ -1446,15 +1511,52 @@
         border-radius: var(--large-radius);
       }
 
-      /* On a phone the title bar only has room for the two buttons and the
-         name, and the panels need less room around their contents. */
+      /* On a phone the title in the middle is left out, and the subtitle
+         only shows on the start screen: the title bar has little room. And
+         the panels need less room around their contents. */
       @media (max-width: 640px) {
         :root {
           --panel-padding: 16px;
         }
-        .top-bar-title,
-        .top-bar-subtitle {
+        .top-bar-title {
           display: none;
+        }
+        /* The name keeps the room it needs on the left, the subtitle and
+           its button take the rest on the right. With a little less room
+           next to the buttons, the whole subtitle fits on most phones; on
+           a very narrow one it ends in "…" instead of breaking onto a
+           second line. */
+        .top-bar {
+          --panel-button-gap: 10px;
+          grid-template-columns: auto minmax(0, 1fr);
+          column-gap: 8px;
+        }
+        .top-bar-end {
+          grid-column: 2;
+          min-width: 0;
+        }
+        .top-bar-subtitle {
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        /* The subtitle only shows on the start screen. It fades out with
+           the start screen once a mode is picked, and back in with it.
+           The transform is the move it already makes (see "on the start
+           screen the buttons are hidden"); `transition` replaces the
+           whole list, so both are listed here. */
+        .top-bar-end .top-bar-subtitle {
+          transition:
+            transform var(--fade-duration) ease-in-out var(--start-screen-delay),
+            opacity var(--fade-duration) ease var(--start-screen-delay);
+        }
+        body:not(.is-starting) .top-bar-subtitle {
+          opacity: 0;
+        }
+        /* only the subtitle gives way, never the button next to it */
+        .top-bar-end .top-bar-panel-button {
+          flex-shrink: 0;
         }
       }
 

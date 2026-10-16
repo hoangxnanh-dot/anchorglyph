@@ -482,6 +482,9 @@ let library;
 // The buttons in the title bar that fold the panels away, see
 // src/lib/panels.js.
 let panelButtons;
+// Whether the library has slid in by itself after a save on a narrow
+// window yet. It only does so once per visit, see saveToLibrary().
+let hasShownLibraryAfterSave = false;
 // The title bar across the top of the window, see createTopBar(), and how
 // tall it is. The height is measured once: a hidden bar measures 0.
 let topBar;
@@ -2094,7 +2097,7 @@ window.mousePressed = function mousePressed(event) {
   // Multiple view: a click on an iteration saves it to the library
   if (isMultipleView()) {
     const index = iterationUnderMouse();
-    if (index >= 0) library.save(() => captureIteration(index));
+    if (index >= 0) saveToLibrary(() => captureIteration(index));
     return;
   }
 
@@ -2195,7 +2198,7 @@ window.addEventListener('keydown', (event) => {
     clearEverything();
   } else if (event.key.toLowerCase() === 's') {
     // same as the library's "Save Iteration" button, flash and slide included
-    library.save();
+    saveToLibrary();
   } else if (event.key.toLowerCase() === 't') {
     toggleAllFolders();
   } else if (event.key === 'g') {
@@ -3099,6 +3102,20 @@ function updatePlaybackProgress() {
 // Stop on top, Randomize All, Save Iteration and Clear below. They do
 // the same as the buttons in the panels. fitView() places it; its look is
 // in index.html, under "the dock".
+// Saves to the library, like its Save Iteration button: the Save button in
+// the dock, the s key and a click on an iteration all come here. On a
+// narrow window the library is folded away, so the first save of a visit
+// slides it in, to show where saved iterations go. After that it stays
+// folded, so saving doesn't cover the drawing each time. `captureWith` is
+// passed on to library.save() (see src/lib/library.js).
+function saveToLibrary(captureWith) {
+  library.save(captureWith);
+  if (panelButtons.isNarrow() && !hasShownLibraryAfterSave) {
+    hasShownLibraryAfterSave = true;
+    panelButtons.open('library');
+  }
+}
+
 function createDock() {
   const { restartButton, pauseButton, stopButton, progress } = createPlaybackControls();
   const buttons = document.createElement('div');
@@ -3108,7 +3125,7 @@ function createDock() {
     pauseButton,
     stopButton,
     makeButton('Randomize', randomizeAll, RANDOMIZE_ICON),
-    makeButton('Save', () => library.save(), SAVE_ICON),
+    makeButton('Save', () => saveToLibrary(), SAVE_ICON),
     makeButton('Clear', clearEverything, CLEAR_ICON),
   );
 

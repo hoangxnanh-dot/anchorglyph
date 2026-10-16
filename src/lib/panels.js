@@ -14,8 +14,9 @@
 //
 // On a narrow window, like a phone or a tablet held upright, there is no
 // room for the panels beside the drawing. There they lie over it instead,
-// start folded, and only one is open at a time. While the window is narrow
-// the page has the class is-narrow, and isNarrow() says so.
+// start folded, only one is open at a time, and a tap outside the open one
+// folds it away again. While the window is narrow the page has the class
+// is-narrow, and isNarrow() says so.
 
 import { makeIconButton } from './gui.js';
 import { LIBRARY_ICON, MENU_ICON } from './icons.js';
@@ -23,6 +24,11 @@ import { LIBRARY_ICON, MENU_ICON } from './icons.js';
 // Windows narrower than this, in pixels, count as narrow: phones, and
 // tablets held upright. Windows taller than wide count as narrow too.
 const NARROW_WIDTH = 1024;
+
+// Taps on these don't fold an open panel on a narrow window: the panels
+// themselves, the library's large preview that opens from it, and the two
+// buttons in the title bar, which fold and unfold the panels on their own.
+const INSIDE_PANELS = '.library, .library-preview, .lil-gui, .top-bar-panel-button';
 
 // The two panels: the name the button shows when the mouse rests on it,
 // its icon, and the class on the page while the panel is folded.
@@ -83,5 +89,24 @@ export function createPanelButtons() {
   fitWindow();
   window.addEventListener('resize', fitWindow);
 
-  return { library: buttons.library, controls: buttons.controls, isNarrow };
+  // On a narrow window an open panel lies over the drawing. A tap anywhere
+  // outside it folds it away again. `true` hears the tap before the sketch
+  // does, so a tap on the drawing only folds the panel, without also adding
+  // or removing an anchor. Taps on the dock's buttons still do what they say.
+  window.addEventListener('pointerdown', (event) => {
+    if (!isNarrow()) return;
+    const openPanels = Object.keys(PANELS).filter(isOpen);
+    if (openPanels.length === 0) return;
+    if (event.target.closest(INSIDE_PANELS)) return;
+    for (const panelName of openPanels) setOpen(panelName, false);
+    if (event.target.tagName === 'CANVAS') event.stopPropagation();
+  }, true);
+
+  // open('library') or open('controls') unfolds a panel from the sketch,
+  // the same as clicking its button
+  function open(panelName) {
+    setOpen(panelName, true);
+  }
+
+  return { library: buttons.library, controls: buttons.controls, isNarrow, open };
 }
