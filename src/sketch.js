@@ -117,15 +117,14 @@ import {
   RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, CLEAR_ICON,
 } from './lib/icons.js';
 
-// The speed the sketch opens with: a quarter of NORMAL_SPEED, so the curve
-// builds up slowly and the anchors stay calm.
-const STARTING_SPEED = 0.375;
+// The speed the sketch opens with: the middle of the Speed slider
+// (speedRange below), so there is as much room to go slower as faster.
+const STARTING_SPEED = 1.5;
 // At this speed the anchors drift by the normal amount; faster speeds shake
 // them more, slower ones calm them down.
 const NORMAL_SPEED = 1.5;
-// The range of the Speed slider in the Drift folder. It goes low enough to
-// hold the starting speed.
-const speedRange = { min: 0.1, max: 2.5, step: 0.05 };
+// The range of the Speed slider in the Drift folder.
+const speedRange = { min: 0.5, max: 2.5, step: 0.05 };
 // The range of the Drift slider above it, in cells: how far an anchor may
 // wander from its spot. Anchors never leave the grid, whatever the setting.
 const driftReachRange = { min: 0.5, max: 10, step: 0.5 };
@@ -216,7 +215,7 @@ const uiParams = {
   textureWeight: 2,
   paintMode: 'Line',   // 'Line' = ink along the curve, 'Fill' = ink inside it
   speed: STARTING_SPEED, // drawing steps per frame, and how hard anchors shake
-  driftReach: 2.625,   // how far anchors may wander (or swing, in Animation), in cells
+  driftReach: 5,       // how far anchors may wander (or swing, in Animation), in cells; about the middle of its slider
   curvature: 0,        // -1 = sharp corners, 0 = the normal smooth curve, 1 = bends swing out further
 
   // fixed: these are not in the control panel
@@ -332,7 +331,7 @@ const RESTLESSNESS_MAX = 20;
 // Base shake per step, in pixels.
 const DRIFT_STEP = 0.005;
 // Base wander per step, in pixels. At the starting speed an average anchor
-// travels about 0.17 cells per second.
+// travels about 0.7 cells per second.
 const WANDER_STEP = 0.006;
 // How much the heading may turn per step, as an angle. Bigger values make
 // winding paths, smaller ones straighter paths.
