@@ -4,7 +4,7 @@
 // exported as an MP4 film of how it came to be, up to the moment it was
 // saved.
 //
-//   const recorder = createVideoRecorder({ height: 1440 });
+//   const recorder = createVideoRecorder({ height: 1440, paintBehind });
 //   recorder.addFrame(canvas, left, top, width, height, extra);  every frame
 //   const recording = await recorder.snapshot();   the video up to now
 //   recorder.reset();                              start a new video
@@ -26,8 +26,14 @@
 // took to draw it: the video plays smoothly, at the speed the drawing has
 // on a computer that keeps up.
 //
+// The part cut out may reach past the canvas's edges. paintBehind(context,
+// width, height), if given, paints each frame first (the sketch paints
+// its background), so those parts aren't left empty.
+//
 // Browsers without WebCodecs (or without H.264 in it) record nothing, and
 // snapshot() gives back null.
+
+import { copyRegion } from './export.js';
 
 // How many frames the video shows per second.
 const FRAMES_PER_SECOND = 60;
@@ -39,8 +45,7 @@ const BITS_PER_PIXEL_PER_FRAME = 0.32;
 // in between only store what changed. More often makes the file bigger,
 // less often makes jumping around in a player slower.
 const KEY_FRAME_EVERY = FRAMES_PER_SECOND * 2;
-// H.264 "High" profile, level 5.1: big enough for a 1440 pixel video, also
-// when a slanted grid makes it wider than tall.
+// H.264 "High" profile, level 5.1: big enough for a 1440 × 1440 video.
 const CODEC = 'avc1.640033';
 // The encoder works in millionths of a second.
 const MICROSECONDS_PER_SECOND = 1_000_000;
@@ -54,7 +59,7 @@ const READ_AHEAD = 8;
 // Every MP4 box starts with 8 bytes: its size and its four-letter name.
 const BOX_HEADER_SIZE = 8;
 
-export function createVideoRecorder({ height }) {
+export function createVideoRecorder({ height, paintBehind = null }) {
   const supported = typeof VideoEncoder !== 'undefined';
   // the frames are drawn onto this canvas at the video's size first
   const frameCanvas = document.createElement('canvas');
@@ -108,7 +113,7 @@ export function createVideoRecorder({ height }) {
   // Adds one frame: the part of `source` (a canvas) from `left`, `top`,
   // `sourceWidth` × `sourceHeight` pixels, made the video's height. The
   // width follows its shape, rounded to an even number, which H.264 needs.
-  // If the shape changes (the grid's slant), a new video starts.
+  // If the shape changes, a new video starts.
   // Gives back whether the frame was added: false while the encoder is
   // too far behind, or if the browser can't record.
   function addFrame(source, left, top, sourceWidth, sourceHeight, extra = null) {
@@ -118,7 +123,9 @@ export function createVideoRecorder({ height }) {
     if (!encoder) start(width);
     if (encoder.state !== 'configured' || encoder.encodeQueueSize > MAX_WAITING_FRAMES) return false;
 
-    frameContext.drawImage(source, left, top, sourceWidth, sourceHeight, 0, 0, frameCanvas.width, frameCanvas.height);
+    paintBehind?.(frameContext, frameCanvas.width, frameCanvas.height);
+    const region = { left, top, width: sourceWidth, height: sourceHeight };
+    copyRegion(frameContext, source, region, frameCanvas.width, frameCanvas.height);
     const frameDuration = MICROSECONDS_PER_SECOND / FRAMES_PER_SECOND;
     const frame = new VideoFrame(frameCanvas, {
       timestamp: Math.round(frameCount * frameDuration),

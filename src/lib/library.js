@@ -59,8 +59,10 @@
 import { screenshotName, variationName, variationDigits } from '../config.js';
 import { saveToDownloads, saveAllToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton } from './gui.js';
+import { makePoster } from './poster.js';
 import {
-  ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
+  ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, POSTER_ICON, ANCHOR_ICON, BACKGROUND_ICON,
+  dotGridIcon,
 } from './icons.js';
 
 // Saving shows a short flash in the accent color over the drawing, like a
@@ -87,7 +89,7 @@ const REMOVE_SCALE = 0.94;
 // how to start. One paragraph per line.
 const INTRO_PARAGRAPHS = [
   'Generate anchor points with type or click inside the grid to add points and drag to move them. Click a point to remove it.',
-  'Experiment with options in Controls. Iterations can be saved in Library.',
+  'Experiment with options in Controls. Double-click a control’s name or a slider’s handle to reset it to its default. Iterations can be saved in Library.',
 ];
 
 // The keyboard shortcuts listed below the intro, as key and what it does.
@@ -104,9 +106,8 @@ const SHORTCUTS = [
   { key: 'G', action: 'Hide UI' },
 ];
 
-// The sizes the preview's PNG export offers, in pixels wide and tall (a
-// slanted grid makes the picture a little wider). `starting` is the one
-// picked when the page opens.
+// The sizes the preview's PNG export offers, in pixels wide and tall (the
+// pictures are square). `starting` is the one picked when the page opens.
 const PNG_RESOLUTIONS = [
   { name: 'Low', size: 800 },
   { name: 'Mid', size: 1600 },
@@ -275,6 +276,9 @@ export function createLibrary({ capture, apply }) {
   const videoButton = makeButton('MP4', () => exportPreview('mp4'), VIDEO_ICON);
   // set while an MP4 is being made, see exportVideo()
   let videoExporting = false;
+  // the variation on a ready-made A3 poster, as a PDF (see src/lib/poster.js)
+  const posterButton = makeButton('Poster', () => exportPreview('pdf'), POSTER_ICON);
+  posterButton.title = 'The iteration on a poster, as a PDF file';
   const previewSettings = document.createElement('div');
   previewSettings.className = 'library-preview-bar';
   previewSettings.append(guideButtons);
@@ -286,6 +290,7 @@ export function createLibrary({ capture, apply }) {
     resolutionField,
     makeButton('PNG', () => exportPreview('png'), IMAGE_ICON),
     makeButton('SVG', () => exportPreview('svg'), FILE_ICON),
+    posterButton,
     videoButton,
   );
   const previewFooter = document.createElement('div');
@@ -546,8 +551,8 @@ export function createLibrary({ capture, apply }) {
   }
 
   // The size label above the picture: the PNG's width and height at the
-  // resolution picked. A slanted grid makes the picture wider than tall,
-  // so the width follows the picture's own shape, like the PNG's does.
+  // resolution picked. The width follows the picture's own shape, like the
+  // PNG's does (square for everything the sketch saves).
   function showPreviewSize() {
     const height = Number(resolutionField.value);
     const width = previewImage.naturalHeight
@@ -566,9 +571,9 @@ export function createLibrary({ capture, apply }) {
     return shown;
   }
 
-  // PNG and SVG in the preview: the file looks like the preview, with or
-  // without the background, and with the guides that are showing drawn on
-  // top of the drawing.
+  // PNG, SVG and the poster's PDF in the preview: the file looks like the
+  // preview, with or without the background, and with the guides that are
+  // showing drawn on top of the drawing.
   async function exportPreview(format) {
     const variation = previewVariation;
     const filename = exportFileName(variation, format, 1);
@@ -585,8 +590,14 @@ export function createLibrary({ capture, apply }) {
     const drawing = await previewSVGText(variation);
     const end = drawing.lastIndexOf('</svg>');
     const shapes = visibleGuides().map((guide) => guide.slice(guide.indexOf('>') + 1, guide.lastIndexOf('</svg>')));
-    const combined = new Blob([drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end)], { type: 'image/svg+xml' });
+    const combinedText = drawing.slice(0, end) + shapes.join('\n') + drawing.slice(end);
 
+    if (format === 'pdf') {
+      await exportPoster(combinedText, filename);
+      return;
+    }
+
+    const combined = new Blob([combinedText], { type: 'image/svg+xml' });
     if (format === 'svg') {
       saveToDownloads(combined, filename);
       return;
@@ -600,7 +611,8 @@ export function createLibrary({ capture, apply }) {
     const picture = await loadPicture(fileLink);
     URL.revokeObjectURL(fileLink);
     const height = Number(resolutionField.value);
-    // a slanted grid makes the file wider than tall
+    // the width follows the file's own shape (square, see savedSquare()
+    // in src/sketch.js)
     const width = Math.round((height * picture.naturalWidth) / picture.naturalHeight);
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -608,6 +620,23 @@ export function createLibrary({ capture, apply }) {
     canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
     // toBlob copes with large pictures better than a data URL does
     canvas.toBlob((file) => saveToDownloads(file, filename), 'image/png');
+  }
+
+  // The poster: the drawing (`svgText`, as the preview shows it) on the
+  // poster, and below the picture the file's name without the project's
+  // name in front,
+  // like "// V-01-261016-1101-1". Making it takes a moment, during which
+  // the button doesn't take another click.
+  async function exportPoster(svgText, filename) {
+    if (posterButton.disabled) return;
+    posterButton.disabled = true;
+    try {
+      const nameWithoutProject = filename.slice(`${screenshotName}-`.length, filename.lastIndexOf('.'));
+      const file = await makePoster({ svgText, label: `// ${nameWithoutProject}` });
+      saveToDownloads(file, filename);
+    } finally {
+      posterButton.disabled = false;
+    }
   }
 
   // MP4 is greyed out while Background is off: a video can't be

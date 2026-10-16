@@ -34,6 +34,8 @@ export const IMAGE_ICON = lineIcon('<rect x="3" y="3" width="18" height="18" rx=
 // SVG: a sheet of paper with a folded corner
 export const FILE_ICON = lineIcon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>');
 // Anchors: a curve with an anchor point and its two handles, as in Illustrator
+// Poster: an upright sheet with a picture on it and a short line below
+export const POSTER_ICON = lineIcon('<rect x="5" y="2" width="14" height="20" rx="1.5"/><rect x="8" y="5" width="8" height="10"/><line x1="12" y1="18.5" x2="16" y2="18.5"/>');
 // MP4: a frame of film with a play triangle in it
 export const VIDEO_ICON = lineIcon('<rect x="3" y="5" width="18" height="14" rx="2"/><polygon points="10 9 15 12 10 15 10 9"/>');
 // Background: a square with stripes across it, like a filled area
