@@ -55,7 +55,7 @@
 // The look of the panel is in index.html, under "the library".
 
 import { screenshotName, variationName, variationDigits } from '../config.js';
-import { saveToDownloads, timestamp } from './export.js';
+import { saveToDownloads, saveAllToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton, createProjectFooter } from './gui.js';
 import {
   ARROW_ICON, CLOSE_ICON, SAVE_ICON, IMAGE_ICON, FILE_ICON, VIDEO_ICON, ANCHOR_ICON, BACKGROUND_ICON, dotGridIcon,
@@ -93,7 +93,7 @@ const SHORTCUTS = [
   { key: 'Space', action: 'Pause / Play' },
   { key: 'S', action: 'Save Iteration' },
   { key: 'R', action: 'Randomize All' },
-  { key: 'C', action: 'Reset All' },
+  { key: 'C', action: 'Clear' },
   { key: '← / →', action: 'Iterate Anchors' },
   { key: 'T', action: 'Open / Close Controls' },
   { key: 'H', action: 'Hide Guides' },
@@ -441,11 +441,13 @@ export function createLibrary({ capture, apply }) {
   // Every selected variation becomes a file in your Downloads folder, named
   // after the project, the variation and the time, like
   // "Anchorglyph-V-01-260921-1408-1.png". The browser may ask once whether
-  // the page is allowed to download several files.
+  // the page is allowed to download several files. On a phone they go to
+  // the share sheet instead (see saveAllToDownloads() in src/lib/export.js).
   function exportSelected(format) {
-    selectedVariations().forEach((variation, index) => {
-      saveToDownloads(format === 'png' ? variation.picture : variation.svg, exportFileName(variation, format, index + 1));
-    });
+    saveAllToDownloads(selectedVariations().map((variation, index) => ({
+      file: format === 'png' ? variation.picture : variation.svg,
+      filename: exportFileName(variation, format, index + 1),
+    })));
   }
 
   // The name of an exported file. Only letters, digits, - and _ are kept

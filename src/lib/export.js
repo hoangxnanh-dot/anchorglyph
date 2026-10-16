@@ -52,3 +52,33 @@ export function saveToDownloads(file, filename) {
   link.click();
   if (isBlob) setTimeout(() => URL.revokeObjectURL(link.href), LINK_LIFETIME);
 }
+
+// Saves several files at once. `entries` is a list of { file, filename },
+// each file as saveToDownloads() takes it.
+// A phone or tablet lets a page download only one file per tap, so there
+// the downloads after the first would be blocked. Instead, all the files go
+// to the share sheet together: on an iPhone, "Save Images" puts them in
+// Photos and "Save to Files" in a folder. Computers download them as usual.
+export function saveAllToDownloads(entries) {
+  const files = entries.map(({ file, filename }) => toFile(file, filename));
+  // a finger, not a mouse: a phone or tablet
+  const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+  if (files.length > 1 && isTouchDevice && navigator.canShare?.({ files })) {
+    // closing the share sheet without picking anything counts as an error;
+    // nothing needs to happen then
+    navigator.share({ files }).catch(() => {});
+    return;
+  }
+  for (const { file, filename } of entries) saveToDownloads(file, filename);
+}
+
+// The share sheet takes File objects: a Blob with a name. A data URL is
+// "data:image/png;base64," followed by the file's bytes written as text;
+// atob() turns that text back into the bytes.
+function toFile(file, filename) {
+  if (file instanceof Blob) return new File([file], filename, { type: file.type });
+  const [header, base64Text] = file.split(',');
+  const type = header.slice('data:'.length, header.indexOf(';'));
+  const bytes = Uint8Array.from(atob(base64Text), (character) => character.charCodeAt(0));
+  return new File([bytes], filename, { type });
+}
