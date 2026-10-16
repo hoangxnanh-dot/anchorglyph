@@ -105,13 +105,13 @@ import {
 import { createLibrary } from './lib/library.js';
 import { createPanelButtons } from './lib/panels.js';
 import {
-  gridSize, backgroundColor, foregroundColor, accentColor, foregroundEndColor, backgroundEndColor,
+  gridSize, exportSize, backgroundColor, foregroundColor, accentColor, foregroundEndColor, backgroundEndColor,
   startingText, projectTitle, projectSubtitle,
 } from './config.js';
 import { applyFont, defaultFont, textToCurves } from './lib/font/index.js';
 import { createStartScreen, START_TRANSITION_DURATION } from './lib/start.js';
 import { traceOutlines, outlinesToPathData } from './lib/trace.js';
-import { createVideoRecorder, createFrameReader, mp4File } from './lib/video.js';
+import { createVideoRecorder, mp4File } from './lib/video.js';
 import { Easings } from './lib/easings.js';
 import {
   RANDOMIZE_ICON, RESTART_ICON, MORE_ICON, PLAY_ICON, PAUSE_ICON, STOP_ICON, SAVE_ICON, RESET_ICON,
@@ -285,16 +285,19 @@ const speckSizes = {
   grainSpread: 0.4,
 };
 
-// Hair and Fog draw fewer but bigger marks than the other textures: much
-// less work for the computer, so they draw faster, and the texture shows
-// more clearly. Each mark gets more ink to make up for the ones left out,
-// so the line gets about as dark as before.
+// These textures draw fewer but bigger marks: less work for the computer,
+// and more visible texture. These values include each successive reduction:
+// Fineliner keeps its original mark size; Chalk, Grain and Hair use larger
+// marks. Hair remains the sparsest because each object is a whole stroke,
+// and gets a little more opacity so the separate hairs stay visible.
 //   markShare  how many marks they draw, as a share of dotsPerStep
-//              (0.25 = a quarter). Lower is faster, but blotchier at first.
-//   sizeScale  how much bigger each mark is (2 = twice as wide): Hair's
-//              strokes get thicker, Fog's blobs wider
+//   sizeScale  how much bigger each mark is
+//   opacityScale  extra visibility without making the object more expensive
 const sparseTextures = {
-  hair: { markShare: 0.25, sizeScale: 2 },
+  dots: { markShare: 2 / 9, sizeScale: 1 },
+  chalk: { markShare: 4 / 9, sizeScale: 3, opacityScale: 1.5 },
+  grain: { markShare: 4 / 9, sizeScale: 3 },
+  hair: { markShare: 2 / 27, sizeScale: 3, opacityScale: 1.5 },
   fog: { markShare: 0.25, sizeScale: 1.5 },
 };
 // every other texture draws all its marks at their own size
@@ -307,7 +310,7 @@ const TANGENT_STEP = 0.01;
 // Fill: to find what is inside the curve, it is traced as a chain of short
 // straight pieces, this many per segment. More follow the curve closer but
 // take longer.
-const FILL_PIECES_PER_SEGMENT = 8;
+const FILL_PIECES_PER_SEGMENT = 16;
 // Fill: the chance that a pixel inside the curve gets a dot in one drawing
 // step. Higher fills up faster; lower stays grainy for longer.
 const FILL_DOT_CHANCE = 0.15;
@@ -356,9 +359,12 @@ const CELL_PULSE_TURNS = 3;
 const INK_SCALE = 3;
 
 // Every mode records a video of the drawing while it runs (see
-// recordVideoFrame()), so a saved variation can be exported as MP4. It is this many pixels tall, and as wide as the
-// grid's picture: square, or wider when the grid is slanted.
-const VIDEO_HEIGHT = 1440;
+// recordVideoFrame()). It uses the full export height, and becomes wider
+// when a slanted grid reaches beyond the square.
+const VIDEO_HEIGHT = exportSize;
+// Video is composed at the same size it is encoded. Matching the ink layer's
+// scale keeps every source pixel instead of shrinking the finished frame.
+const VIDEO_SOURCE_SCALE = INK_SCALE;
 // Exporting a video with its grid or anchors redraws every frame. This many
 // are redrawn per frame of the sketch: more is faster, but the sketch
 // stutters while it works.
@@ -393,6 +399,10 @@ const guideStyle = {
   numberSize: 12,
   numberOffset: 6,       // how far the number sits up and right of its anchor
 };
+// Video compression can break up very thin colored lines. During MP4 export,
+// guide strokes use this exact output-pixel width; screen, PNG and SVG stay
+// at their original one-grid-pixel width.
+const VIDEO_GUIDE_STROKE_PIXELS = 4;
 // The opacities above run to 255, as in p5; SVG files count them up to 1.
 const SVG_FULL_OPACITY = 255;
 // Full opacity, for the parts of the guides that are otherwise solid.
@@ -471,10 +481,19 @@ let lastGridMode = 'Shape';
 let ink;
 const inkImages = new Map();
 
-// The video of the drawing so far, see src/lib/video.js
-const videoRecorder = createVideoRecorder({ height: VIDEO_HEIGHT });
+// A compact, lossless replay of the drawing so far. Each frame keeps only
+// the ink pixels that changed, plus the anchors and settings needed to draw
+// it. The chosen guides are added before the one and only video encoding.
+let videoReplay = null;
+let videoFrameChanges = null;
+let videoFrameFades = null;
+const videoSourceCanvas = document.createElement('canvas');
+const videoSourceContext = videoSourceCanvas.getContext('2d');
 // A video being exported with its guides, see exportVideo(); null otherwise
 let videoExport = null;
+// Set only while one MP4 frame is composed. It says how many video pixels
+// represent one grid pixel, so guide lines can land at a stable width.
+let videoGuidePixelScale = null;
 
 // The control panel, the library of saved variations on the left, and the
 // panel controls the code changes or hides after they are made.
@@ -589,6 +608,7 @@ window.draw = function draw() {
 
 // Single view: the one drawing in the middle, on the slanted grid.
 function drawSingle(steps) {
+  beginVideoFrame();
   push();
   translate(gridLeft(), gridTop());
   slantGrid();
@@ -612,43 +632,203 @@ function drawSingle(steps) {
 // recorded: the video starts once the main screen is there.
 function recordVideoFrame() {
   if (!isOnMainScreen() || startTransition) {
-    videoRecorder.reset();
+    resetVideoReplay();
     return;
   }
   if (animationPaused) return;
-  // how far each anchor has moved from its place, two numbers per anchor;
-  // in Multiple view one list per iteration
-  const anchorMoves = isMultipleView()
-    ? iterations.map((iteration) => anchorMovesOf(iteration.anchors))
-    : anchorMovesOf(anchors);
-  // the same part of the canvas as the saved picture, see drawingPicture()
-  const density = pixelDensity();
-  const overhang = slantOverhang();
-  videoRecorder.addFrame(
-    drawingContext.canvas,
-    (gridLeft() - overhang) * density, gridTop() * density,
-    (gridSize + overhang * 2) * density, gridSize * density,
-    anchorMoves,
-  );
+  finishVideoFrame();
 }
 
-// dx and dy of every anchor, packed into one short list of numbers
-function anchorMovesOf(anchorList) {
-  const moves = new Float32Array(anchorList.length * 2);
-  anchorList.forEach((anchor, index) => {
-    moves[index * 2] = anchor.dx;
-    moves[index * 2 + 1] = anchor.dy;
+// Begins collecting a lossless description of one frame. The first frame
+// also keeps the starting ink once; later frames store only changed pixels.
+function beginVideoFrame() {
+  if (!isOnMainScreen() || startTransition || animationPaused) {
+    videoFrameChanges = null;
+    videoFrameFades = null;
+    return;
+  }
+  if (!videoReplay) {
+    videoReplay = {
+      height: VIDEO_HEIGHT,
+      initial: replayState(),
+      frames: [],
+    };
+  }
+  videoFrameChanges = new Map();
+  videoFrameFades = new Map();
+}
+
+// The complete starting state for replay. This is stored once, rather than
+// once per frame; the frame deltas below are much smaller than raw pictures.
+function replayState() {
+  const settings = replaySettings();
+  if (isMultipleView()) {
+    return {
+      settings,
+      iterations: iterations.map((iteration) => ({
+        ink: iteration.ink.slice(),
+        anchors: cloneAnchors(iteration.anchors),
+        settings: structuredClone(iteration.settings),
+        noiseSeed: iteration.noiseSeed,
+        loopStep: iteration.loopStep,
+      })),
+    };
+  }
+  return {
+    settings,
+    ink: ink.slice(),
+    anchors: cloneAnchors(anchors),
+    noiseSeed: currentNoiseSeed,
+    loopStep,
+  };
+}
+
+// Guide visibility belongs to the export buttons, not the recorded artwork.
+function replaySettings() {
+  const { showGrid, showAnchors, ...settings } = structuredClone(uiParams);
+  return settings;
+}
+
+function cloneAnchors(anchorList) {
+  return anchorList.map((anchor) => ({ ...anchor }));
+}
+
+// Finishes the current frame after all ink, movement and fading are done.
+function finishVideoFrame() {
+  if (!videoReplay || !videoFrameChanges || !videoFrameFades) return;
+  const settings = replaySettings();
+  if (isMultipleView()) {
+    videoReplay.frames.push({
+      settings,
+      iterations: iterations.map((iteration) => ({
+        delta: inkDelta(iteration.ink),
+        anchors: cloneAnchors(iteration.anchors),
+        settings: structuredClone(iteration.settings),
+        noiseSeed: iteration.noiseSeed,
+        loopStep: iteration.loopStep,
+      })),
+    });
+  } else {
+    videoReplay.frames.push({
+      settings,
+      delta: inkDelta(ink),
+      anchors: cloneAnchors(anchors),
+      noiseSeed: currentNoiseSeed,
+      loopStep,
+    });
+  }
+  videoFrameChanges = null;
+  videoFrameFades = null;
+}
+
+// One frame's final values for only the pixels touched while drawing. In
+// Animation mode every other pixel is reconstructed with the shared fade.
+function inkDelta(layer) {
+  const changed = videoFrameChanges.get(layer) ?? new Set();
+  const indices = Uint32Array.from(changed);
+  const values = new Float32Array(indices.length);
+  indices.forEach((index, place) => {
+    values[place] = layer[index];
   });
-  return moves;
+  return { indices, values, fade: videoFrameFades.get(layer) ?? 1 };
 }
 
-// The saved anchors, moved the way `moves` says (see anchorMovesOf())
-function anchorsMovedBy(savedAnchors, moves) {
-  return savedAnchors.map((anchor, index) => ({
-    ...anchor,
-    dx: moves?.[index * 2] ?? anchor.dx,
-    dy: moves?.[index * 2 + 1] ?? anchor.dy,
-  }));
+function resetVideoReplay() {
+  videoReplay = null;
+  videoFrameChanges = null;
+  videoFrameFades = null;
+}
+
+function snapshotVideoReplay() {
+  if (!videoReplay || videoReplay.frames.length === 0) return null;
+  return { ...videoReplay, frames: videoReplay.frames.slice() };
+}
+
+// Starts a fixed, high-resolution surface for one replayed export frame.
+// Its dimensions follow the artwork, not the browser window.
+function prepareVideoSource() {
+  const overhang = slantOverhang();
+  const fileWidth = gridSize + overhang * 2;
+  const sourceWidth = round(fileWidth * VIDEO_SOURCE_SCALE);
+  const sourceHeight = gridSize * VIDEO_SOURCE_SCALE;
+  // Changing a canvas's dimensions reallocates all its pixels, so only do
+  // that when Slant actually changes its width.
+  if (videoSourceCanvas.width !== sourceWidth) videoSourceCanvas.width = sourceWidth;
+  if (videoSourceCanvas.height !== sourceHeight) videoSourceCanvas.height = sourceHeight;
+  videoSourceContext.imageSmoothingEnabled = true;
+  videoSourceContext.imageSmoothingQuality = 'high';
+
+  videoSourceContext.save();
+  videoSourceContext.scale(VIDEO_SOURCE_SCALE, VIDEO_SOURCE_SCALE);
+  const geometry = gradientGeometry();
+  if (geometry) {
+    const gradient = geometry.type === 'Radial'
+      ? videoSourceContext.createRadialGradient(
+        overhang + geometry.cx, geometry.cy, 0,
+        overhang + geometry.cx, geometry.cy, geometry.r,
+      )
+      : videoSourceContext.createLinearGradient(
+        overhang + geometry.x1, geometry.y1,
+        overhang + geometry.x2, geometry.y2,
+      );
+    gradient.addColorStop(0, svgColor(uiParams.backgroundColor));
+    gradient.addColorStop(1, svgColor(uiParams.backgroundEndColor));
+    videoSourceContext.fillStyle = gradient;
+  } else {
+    videoSourceContext.fillStyle = svgColor(uiParams.backgroundColor);
+  }
+  videoSourceContext.fillRect(0, 0, fileWidth, gridSize);
+  videoSourceContext.restore();
+}
+
+// Adds the current ink layer to the dedicated video frame. Multiple view
+// calls this once per iteration, placing each layer in its part of the sheet.
+function drawArtworkIntoVideoSource(iterationIndex = null) {
+  if (!hasEnoughAnchors()) return;
+  const overhang = slantOverhang();
+  const place = iterationIndex === null
+    ? { x: 0, y: 0, scaleFactor: 1 }
+    : iterationPlace(iterationIndex);
+
+  videoSourceContext.save();
+  videoSourceContext.scale(VIDEO_SOURCE_SCALE, VIDEO_SOURCE_SCALE);
+  videoSourceContext.translate(overhang + place.x, place.y);
+  videoSourceContext.scale(place.scaleFactor, place.scaleFactor);
+  videoSourceContext.translate(gridSize / 2, gridSize / 2);
+  videoSourceContext.transform(1, 0, -slantShift(), 1, 0, 0);
+  videoSourceContext.translate(-gridSize / 2, -gridSize / 2);
+
+  if (isCellStyle()) drawVideoInkCells();
+  else {
+    const screenImage = inkImages.get(layerSize(ink));
+    if (screenImage) videoSourceContext.drawImage(screenImage.picture.canvas, 0, 0, gridSize, gridSize);
+  }
+  videoSourceContext.restore();
+}
+
+// Canvas versions of the cell shapes keep the video composition independent
+// of p5's visible canvas while using the same geometry and colors.
+function drawVideoInkCells() {
+  for (const { centerX, centerY, shapeWidth, shapeHeight } of inkCells()) {
+    videoSourceContext.fillStyle = svgColor(inkColorAt(centerX, centerY));
+    videoSourceContext.beginPath();
+    if (uiParams.texture === 'squares') {
+      videoSourceContext.rect(
+        centerX - shapeWidth / 2, centerY - shapeHeight / 2,
+        shapeWidth, shapeHeight,
+      );
+    } else if (uiParams.texture === 'circles') {
+      videoSourceContext.ellipse(
+        centerX, centerY, shapeWidth / 2, shapeHeight / 2, 0, 0, TWO_PI,
+      );
+    } else {
+      const corners = rhomboidCorners(centerX, centerY, shapeWidth, shapeHeight);
+      videoSourceContext.moveTo(...corners[0]);
+      for (const corner of corners.slice(1)) videoSourceContext.lineTo(...corner);
+      videoSourceContext.closePath();
+    }
+    videoSourceContext.fill();
+  }
 }
 
 // The start screen fades out over START_TRANSITION_DURATION once a mode is
@@ -750,6 +930,7 @@ function placeIteration(index) {
 // all the guides on top, so saving the whole sheet in between gets the
 // drawings alone. The iteration under the mouse gets an outline.
 function drawIterations() {
+  beginVideoFrame();
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
       push();
@@ -1004,7 +1185,7 @@ function resizeGrid() {
 function restartDrawing() {
   setPaused(false);
   // the video starts over with the drawing
-  videoRecorder.reset();
+  resetVideoReplay();
   inkLoadNumber += 1;
   if (ink) ink.fill(0);
   loopStep = 0;
@@ -1210,6 +1391,7 @@ function inkScale() {
 // is done at once: halving every FADE_HALF_LIFE steps.
 function fadeInk(steps) {
   const keep = 0.5 ** (steps / FADE_HALF_LIFE);
+  if (videoFrameFades) videoFrameFades.set(ink, keep);
   for (let index = 0; index < ink.length; index++) ink[index] *= keep;
 }
 
@@ -1332,12 +1514,16 @@ function paintMarks(anchorPoints) {
     // Dots grow with "width": at 1 and 2 they are single pixels, and every
     // step above that makes them a pixel wider. The cell styles use their
     // width for the shapes, so their dots stay single pixels.
-    for (let mark = 0; mark < uiParams.dotsPerStep; mark++) {
+    const sparse = sparseTextures[uiParams.texture] ?? fullTexture;
+    const markCount = uiParams.dotsPerStep * sparse.markShare;
+    const markOpacity = (opacity * (sparse.opacityScale ?? 1))
+      / (sparse.markShare * sparse.sizeScale);
+    for (let mark = 0; mark < markCount; mark++) {
       const u = random(segments);
       const [x, y] = pointOnSpline(points, u);
       const dotWidth = uiParams.textureWeight * pulseAlongCurve(pulses, u);
-      const radius = isCellStyle() ? 0 : Math.max(0, (dotWidth - 1) / 2);
-      addInk(x, y, radius, opacity);
+      const radius = isCellStyle() ? 0 : Math.max(0, (dotWidth * sparse.sizeScale - 1) / 2);
+      addInk(x, y, radius, markOpacity);
     }
     return;
   }
@@ -1352,7 +1538,8 @@ function paintMarks(anchorPoints) {
   const markCount = (uiParams.dotsPerStep * sparse.markShare) / fogThinning;
   // the ink of the marks left out goes into the ones that are drawn. Bigger
   // marks spread their ink wider, so they get a share more for that, too.
-  const markOpacity = (opacity * fogThinning) / (sparse.markShare * sparse.sizeScale);
+  const markOpacity = (opacity * fogThinning * (sparse.opacityScale ?? 1))
+    / (sparse.markShare * sparse.sizeScale);
 
   for (let mark = 0; mark < markCount; mark++) {
     const u = random(segments);
@@ -1369,7 +1556,10 @@ function paintMarks(anchorPoints) {
     switch (uiParams.texture) {
       // tiny specks scattered across the line
       case 'chalk':
-        addInk(x + acrossX * offset, y + acrossY * offset, speckSizes.chalkRadius, markOpacity);
+        addInk(
+          x + acrossX * offset, y + acrossY * offset,
+          speckSizes.chalkRadius * sparse.sizeScale, markOpacity,
+        );
         break;
       // thin strokes straight across the line, like hairs
       case 'hair':
@@ -1386,8 +1576,9 @@ function paintMarks(anchorPoints) {
       // pairs of small specks on both sides of the line
       case 'grain': {
         const spread = offset * speckSizes.grainSpread;
-        addInk(x + acrossX * spread, y + acrossY * spread, speckSizes.grainRadius, markOpacity);
-        addInk(x - acrossX * spread, y - acrossY * spread, speckSizes.grainRadius, markOpacity);
+        const radius = speckSizes.grainRadius * sparse.sizeScale;
+        addInk(x + acrossX * spread, y + acrossY * spread, radius, markOpacity);
+        addInk(x - acrossX * spread, y - acrossY * spread, radius, markOpacity);
         break;
       }
     }
@@ -1459,15 +1650,22 @@ function addInk(x, y, radius, opacity) {
   const scale = inkScale();
   const size = layerSize(ink);
 
-  // A mark less than a grid pixel wide covers one grid pixel's worth of ink
-  // pixels: a small square of them, centred on the mark. Chalk and Grain
-  // are made of these.
+  // A mark less than a grid pixel wide is shared between nearby ink pixels.
+  // This keeps tiny Chalk and Grain marks from turning into hard square
+  // blocks in the full-size 2400 pixel video.
   if (radius < 1) {
-    const left = Math.round(x * scale - scale / 2);
-    const top = Math.round(y * scale - scale / 2);
-    for (let offsetY = 0; offsetY < scale; offsetY++) {
-      for (let offsetX = 0; offsetX < scale; offsetX++) {
-        addInkToPixel(left + offsetX, top + offsetY, markOpacity, size);
+    const centerX = x * scale;
+    const centerY = y * scale;
+    const inkRadius = Math.max(radius * scale, 0.5);
+    const left = Math.floor(centerX - inkRadius);
+    const right = Math.ceil(centerX + inkRadius);
+    const top = Math.floor(centerY - inkRadius);
+    const bottom = Math.ceil(centerY + inkRadius);
+    for (let pixelY = top; pixelY <= bottom; pixelY++) {
+      for (let pixelX = left; pixelX <= right; pixelX++) {
+        const distance = dist(pixelX + 0.5, pixelY + 0.5, centerX, centerY);
+        const coverage = constrain(inkRadius + 0.5 - distance, 0, 1);
+        if (coverage > 0) addInkToPixel(pixelX, pixelY, markOpacity * coverage, size);
       }
     }
     return;
@@ -1496,6 +1694,10 @@ function addInkToPixel(pixelX, pixelY, markOpacity, size) {
   if (pixelX < 0 || pixelY < 0 || pixelX >= size || pixelY >= size) return;
   const index = pixelY * size + pixelX;
   ink[index] += (1 - ink[index]) * markOpacity;
+  if (videoFrameChanges) {
+    if (!videoFrameChanges.has(ink)) videoFrameChanges.set(ink, new Set());
+    videoFrameChanges.get(ink).add(index);
+  }
 }
 
 // A short stroke made of small marks. Its ink is shared between them, so a
@@ -1794,9 +1996,10 @@ function drawingSVG({ withBackground = true } = {}) {
 function svgFile(shapes, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
+  const exportWidth = round((fileWidth * exportSize) / gridSize, SVG_DECIMALS);
   const middle = gridSize / 2;
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${exportWidth}" height="${exportSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
     ...(withBackground ? backgroundSVG(-overhang, fileWidth) : []),
     `<g transform="translate(${middle} ${middle}) skewX(${-uiParams.gridSlant}) translate(${-middle} ${-middle})">`,
     ...shapes,
@@ -1929,7 +2132,7 @@ function drawGridLines() {
   const { r, g, b } = guideStyle.gridLineColor;
   noFill();
   stroke(r, g, b, guideOpacity(guideStyle.gridLineOpacity, 'showGrid'));
-  strokeWeight(1);
+  strokeWeight(guideStrokeWeight());
   for (let row = 0; row < uiParams.rows; row++) {
     for (let column = 0; column < uiParams.columns; column++) {
       rect(column * cellWidth, row * cellHeight, cellWidth, cellHeight);
@@ -1950,7 +2153,7 @@ function drawAnchors() {
   if (points.length >= 2) {
     noFill();
     stroke(r, g, b, guideOpacity(guideStyle.polygonOpacity, 'showAnchors'));
-    strokeWeight(1);
+    strokeWeight(guideStrokeWeight());
     beginShape();
     for (const [x, y] of points) vertex(x, y);
     if (uiParams.closed && points.length >= 3) endShape(CLOSE);
@@ -1982,8 +2185,16 @@ function drawAnchorShape(anchor, x, y) {
   // a see-through fill, so overlapping shapes and the curve still show
   fill(r, g, b, guideOpacity(guideStyle.cellShapeOpacity, 'showAnchors'));
   stroke(r, g, b, guideOpacity(SOLID, 'showAnchors'));
-  strokeWeight(1);
+  strokeWeight(guideStrokeWeight());
   drawCellShape((anchor.column + 0.5) * cellWidth, (anchor.row + 0.5) * cellHeight, cellWidth, cellHeight);
+}
+
+// Normal guides use one grid pixel. Video guides use a whole-number output
+// width, which survives H.264 compression more cleanly as anchors move.
+function guideStrokeWeight() {
+  return videoGuidePixelScale
+    ? VIDEO_GUIDE_STROKE_PIXELS / videoGuidePixelScale
+    : 1;
 }
 
 // Where the grid starts. It sits in the middle of the space between the
@@ -2460,9 +2671,10 @@ function captureVariation() {
   return new Promise((resolve) => {
     saveWaiting = () => {
       const variation = isMultipleView() ? currentSheet() : currentDrawing();
-      const video = videoRecorder.snapshot().then((recording) => recording && {
-        render: (options, onProgress) => exportVideo(recording, variation.data, options, onProgress),
-      });
+      const replay = snapshotVideoReplay();
+      const video = Promise.resolve(typeof VideoEncoder !== 'undefined' && replay
+        ? { render: (options, onProgress) => exportVideo(replay, options, onProgress) }
+        : null);
       resolve({ ...variation, video });
     };
   });
@@ -2532,6 +2744,7 @@ function currentSheet() {
 function sheetFile(makeFile, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
+  const exportWidth = round((fileWidth * exportSize) / gridSize, SVG_DECIMALS);
   const shapes = withBackground ? backgroundSVG(-overhang, fileWidth) : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
@@ -2547,61 +2760,84 @@ function sheetFile(makeFile, { withBackground = false } = {}) {
     });
   });
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${fileWidth}" height="${gridSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${exportWidth}" height="${exportSize}" viewBox="${-overhang} 0 ${fileWidth} ${gridSize}">`,
     ...shapes,
     '</svg>',
   ];
 }
 
-// The MP4 file of a saved video. `recording` is the drawing alone, as
-// recorded; `savedData` is the variation it was saved with, for its grid,
-// its anchors and its colors. Without guides the recording is the file.
-// With the grid or the anchors, every frame is played back, drawn onto the
-// canvas at the video's size, with the guides on top, drawn by the same
-// code as on screen, and recorded again: renderVideoExport() does a few
-// frames per frame of the sketch. `onProgress` hears how far it has come,
-// from 0 to 1. The background always stays: a video can't be see-through.
-function exportVideo(recording, savedData, { showGrid, showAnchors }, onProgress) {
-  if (!showGrid && !showAnchors) return Promise.resolve(mp4File(recording));
+// Builds an MP4 from the lossless replay. Artwork and the selected guides
+// meet before the encoder, so every downloaded video is compressed once.
+function exportVideo(replay, { showGrid, showAnchors }, onProgress) {
   if (videoExport) return Promise.reject(new Error('Another video is being exported.'));
   return new Promise((resolve, reject) => {
     videoExport = {
-      recording, savedData, showGrid, showAnchors, onProgress, resolve, reject,
-      reader: createFrameReader(recording),
-      encoder: createVideoRecorder({ height: recording.height }),
-      // how many frames are done, and the one being drawn
+      replay, showGrid, showAnchors, onProgress, resolve, reject,
+      state: replayExportState(replay.initial),
+      encoder: createVideoRecorder({ height: replay.height }),
       done: 0,
-      frame: null,
+      encoderPrepared: false,
     };
   });
 }
 
-// draw() calls this while a video is exported: the next few frames, drawn
-// at the canvas's top left corner. draw() paints the whole canvas over it
-// right after, so it never shows.
+// A private, mutable copy of the starting ink. The saved replay stays intact
+// so the same variation can be exported again with different guide choices.
+function replayExportState(initial) {
+  if (initial.iterations) {
+    return {
+      iterations: initial.iterations.map((iteration) => ({
+        ...iteration,
+        ink: iteration.ink.slice(),
+        anchors: cloneAnchors(iteration.anchors),
+        settings: structuredClone(iteration.settings),
+        stepsWaiting: 0,
+      })),
+    };
+  }
+  return {
+    ink: initial.ink.slice(),
+    anchors: cloneAnchors(initial.anchors),
+    noiseSeed: initial.noiseSeed,
+    loopStep: initial.loopStep,
+  };
+}
+
+// draw() calls this while a video is exported. A few replay frames are
+// rebuilt out of sight, completed with their guides and encoded directly.
 function renderVideoExport() {
   const job = videoExport;
-  const total = job.recording.frames.length;
+  const total = job.replay.frames.length;
+
+  if (!job.encoderPrepared) {
+    prepareReplayEncoder(job);
+    job.encoderPrepared = true;
+    return;
+  }
+  if (job.encoder.hasFailed()) {
+    videoExport = null;
+    job.reject(new Error('The video could not be encoded on this device.'));
+    return;
+  }
+  if (!job.encoder.canAcceptFrame()) return;
+
   for (let count = 0; count < VIDEO_EXPORT_FRAMES_PER_DRAW && job.done < total; count++) {
-    // null while the next frame is still being unpacked: next time then
-    job.frame ??= job.reader.take();
-    if (!job.frame) break;
-    const region = drawVideoExportFrame(job);
-    // false while the encoder is busy: this frame is drawn again next time
-    if (!job.encoder.addFrame(drawingContext.canvas, 0, 0, region.width, region.height)) break;
-    job.frame.close();
-    job.frame = null;
+    if (!job.encoder.canAcceptFrame()) break;
+    const region = drawVideoReplayFrame(job);
+    if (!job.encoder.addFrame(drawingContext.canvas, 0, 0, region.width, region.height)) {
+      videoExport = null;
+      job.reject(new Error('The video encoder stopped before the export finished.'));
+      return;
+    }
     job.done += 1;
   }
   job.onProgress?.(job.done / total);
 
-  if (job.reader.hasFailed()) {
+  if (job.encoder.hasFailed()) {
     videoExport = null;
-    job.reader.close();
-    job.reject(new Error('The video could not be read.'));
+    job.reject(new Error('The video could not be encoded on this device.'));
   } else if (job.done === total) {
     videoExport = null;
-    job.reader.close();
     job.encoder.snapshot().then((recording) => {
       if (recording) job.resolve(mp4File(recording));
       else job.reject(new Error('The video could not be made.'));
@@ -2609,49 +2845,111 @@ function renderVideoExport() {
   }
 }
 
-// One frame of a video export: the recorded drawing with the guides on
-// top, as the saved variation had them. For a moment the saved settings
-// and anchors stand in for yours, so the usual drawing code draws them.
-// The grid is drawn exactly as many canvas pixels tall as the video, so
-// nothing is made larger or smaller. Gives back how big that part of the
-// canvas is, in canvas pixels.
-function drawVideoExportFrame(job) {
-  const { settings, anchors: savedAnchors, iterations: savedIterations } = job.savedData;
-  const anchorMoves = job.recording.extras[job.done];
+// Gives the encoder its fixed dimensions before replay mutates any ink.
+function prepareReplayEncoder(job) {
+  const frame = job.replay.frames[0];
   const yourSettings = { ...uiParams };
-  const yourAnchors = anchors;
-  Object.assign(uiParams, settings, { showGrid: job.showGrid, showAnchors: job.showAnchors });
+  Object.assign(uiParams, frame.settings);
+  prepareVideoSource();
+  job.encoder.prepare(videoSourceCanvas.width, videoSourceCanvas.height);
+  Object.assign(uiParams, yourSettings);
+}
+
+// Rebuilds one exact artwork frame from its pixel delta, adds the requested
+// guides and leaves the result at the canvas's top left for the encoder.
+function drawVideoReplayFrame(job) {
+  const frame = job.replay.frames[job.done];
+  const yourState = {
+    settings: { ...uiParams }, ink, anchors, iterations,
+    loopStep, currentNoiseSeed, stepsWaiting, videoGuidePixelScale,
+  };
+  Object.assign(uiParams, frame.settings, {
+    showGrid: job.showGrid,
+    showAnchors: job.showAnchors,
+  });
+
+  prepareVideoSource();
+  if (frame.iterations) drawReplayIterations(job.state, frame);
+  else drawReplaySingle(job.state, frame);
 
   const overhang = slantOverhang();
-  // one grid pixel is this many canvas units, so the grid comes out exactly
-  // the video's height in canvas pixels
-  const videoScale = job.recording.height / (gridSize * pixelDensity());
+  const videoScale = job.replay.height / (gridSize * pixelDensity());
+  videoGuidePixelScale = job.replay.height / gridSize;
   push();
   scale(videoScale);
   translate(overhang, 0);
-  drawingContext.drawImage(job.frame, -overhang, 0, gridSize + overhang * 2, gridSize);
-  if (savedIterations) {
-    // a sheet: every iteration's guides in its spot, like drawIterations()
-    savedIterations.forEach((iteration, index) => {
+  drawingContext.drawImage(videoSourceCanvas, -overhang, 0, gridSize + overhang * 2, gridSize);
+  if (frame.iterations) {
+    job.state.iterations.forEach((iteration, index) => {
       const { x, y, scaleFactor } = iterationPlace(index);
       push();
       translate(x, y);
       scale(scaleFactor);
       slantGrid();
-      anchors = anchorsMovedBy(iteration.anchors, anchorMoves?.[index]);
-      drawGuides();
+      withIteration(iteration, drawGuides);
       pop();
     });
   } else {
     slantGrid();
-    anchors = anchorsMovedBy(savedAnchors, anchorMoves);
     drawGuides();
   }
   pop();
 
-  Object.assign(uiParams, yourSettings);
-  anchors = yourAnchors;
-  return { width: (gridSize + overhang * 2) * videoScale * pixelDensity(), height: job.recording.height };
+  Object.assign(uiParams, yourState.settings);
+  ink = yourState.ink;
+  anchors = yourState.anchors;
+  iterations = yourState.iterations;
+  loopStep = yourState.loopStep;
+  currentNoiseSeed = yourState.currentNoiseSeed;
+  stepsWaiting = yourState.stepsWaiting;
+  videoGuidePixelScale = yourState.videoGuidePixelScale;
+  if (currentNoiseSeed !== undefined) noiseSeed(currentNoiseSeed);
+  return { width: (gridSize + overhang * 2) * videoScale * pixelDensity(), height: job.replay.height };
+}
+
+function drawReplaySingle(state, frame) {
+  applyInkDelta(state.ink, frame.delta);
+  state.anchors = frame.anchors;
+  state.noiseSeed = frame.noiseSeed;
+  state.loopStep = frame.loopStep;
+  ink = state.ink;
+  anchors = state.anchors;
+  currentNoiseSeed = state.noiseSeed;
+  loopStep = state.loopStep;
+  noiseSeed(currentNoiseSeed);
+  updateReplayInkImage();
+  drawArtworkIntoVideoSource();
+}
+
+function drawReplayIterations(state, frame) {
+  state.iterations.forEach((iteration, index) => {
+    const saved = frame.iterations[index];
+    applyInkDelta(iteration.ink, saved.delta);
+    iteration.anchors = saved.anchors;
+    iteration.settings = saved.settings;
+    iteration.noiseSeed = saved.noiseSeed;
+    iteration.loopStep = saved.loopStep;
+    withIteration(iteration, () => {
+      updateReplayInkImage();
+      drawArtworkIntoVideoSource(index);
+    });
+  });
+  iterations = state.iterations;
+}
+
+// Curve styles need their p5 image refreshed from the replayed ink before
+// that image is copied to the dedicated video surface.
+function updateReplayInkImage() {
+  if (!isCellStyle()) drawInk();
+}
+
+function applyInkDelta(layer, delta) {
+  if (delta.fade !== 1) {
+    for (let index = 0; index < layer.length; index++) layer[index] *= delta.fade;
+  }
+  delta.indices.forEach((index, place) => {
+    layer[index] = delta.values[place];
+  });
 }
 
 // Multiple view: a click on an iteration saves just that one. The library
@@ -2708,7 +3006,7 @@ function applyVariation(data) {
   inkLoadNumber += 1;
   pictureToInk(inkPicture);
   // a new video starts from the loaded drawing once it plays
-  videoRecorder.reset();
+  resetVideoReplay();
   // paused, so you see it exactly as it was saved. Space continues drawing.
   setPaused(true);
   refreshPanel();
@@ -2750,7 +3048,7 @@ function applySheet({ settings, iterations: savedIterations }) {
   });
   anchors = savedIterations[0].anchors.map((anchor) => ({ ...anchor }));
   // a new video starts from the loaded sheet once it plays
-  videoRecorder.reset();
+  resetVideoReplay();
   setPaused(true);
   refreshPanel();
 }

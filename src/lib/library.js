@@ -12,7 +12,7 @@
 //                    picture, Background shows or hides the background
 //                    (a checkerboard shows where it is see-through), and
 //                    PNG and SVG export it as you see it there. The field
-//                    left of PNG sets how many pixels the PNG has. MP4
+//                    left of PNG shows the fixed export size. MP4
 //                    exports the video of the drawing up to the moment it
 //                    was saved, with the grid and anchors that are showing
 //                    (always with its background: a video can't be
@@ -54,7 +54,7 @@
 //
 // The look of the panel is in index.html, under "the library".
 
-import { screenshotName, variationName, variationDigits } from '../config.js';
+import { screenshotName, variationName, variationDigits, exportSize } from '../config.js';
 import { saveToDownloads, timestamp } from './export.js';
 import { makeButton, makeIconButton, createProjectFooter } from './gui.js';
 import {
@@ -442,10 +442,14 @@ export function createLibrary({ capture, apply }) {
   // after the project, the variation and the time, like
   // "Anchorglyph-V-01-260921-1408-1.png". The browser may ask once whether
   // the page is allowed to download several files.
-  function exportSelected(format) {
-    selectedVariations().forEach((variation, index) => {
-      saveToDownloads(format === 'png' ? variation.picture : variation.svg, exportFileName(variation, format, index + 1));
-    });
+  async function exportSelected(format) {
+    const selected = selectedVariations();
+    for (const [index, variation] of selected.entries()) {
+      const file = format === 'png'
+        ? await pictureAtHeight(variation.picture, exportSize)
+        : variation.svg;
+      saveToDownloads(file, exportFileName(variation, format, index + 1));
+    }
   }
 
   // The name of an exported file. Only letters, digits, - and _ are kept
@@ -593,6 +597,19 @@ export function createLibrary({ capture, apply }) {
     canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
     // toBlob copes with large pictures better than a data URL does
     canvas.toBlob((file) => saveToDownloads(file, filename), 'image/png');
+  }
+
+  // Saved cards already hold a PNG, but its pixel count can depend on the
+  // screen it was made on. Batch downloads are resized to the shared export
+  // height too, so every PNG download follows the same setting.
+  async function pictureAtHeight(source, height) {
+    const picture = await loadPicture(source);
+    const width = Math.round((height * picture.naturalWidth) / picture.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(picture, 0, 0, width, height);
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   }
 
   // MP4 is greyed out while Background is off: a video can't be
