@@ -357,6 +357,11 @@ const CELL_PULSE_TURNS = 3;
 // iterations are small on screen, and there are many of them.
 const INK_SCALE = 3;
 
+// The room of background kept around the grid in everything saved (the
+// picture, the SVG files and the video), as a share of the grid on each
+// side, so the grid never touches the edges. See savedSquare().
+const SAVED_MARGIN = 0.08;
+
 // Every mode records a video of the drawing while it runs (see
 // recordVideoFrame()). It uses the full export height, and becomes wider
 // when a slanted grid reaches beyond the square.
@@ -1909,19 +1914,42 @@ function inkColorAt(x, y) {
 function paintBackground() {
   const { r, g, b } = uiParams.backgroundColor;
   background(r, g, b);
+  if (!gradientGeometry()) return;
+  // measured from the grid's top left corner, like the gradient
+  drawingContext.save();
+  drawingContext.translate(gridLeft(), gridTop());
+  drawingContext.fillStyle = backgroundFill(drawingContext);
+  drawingContext.fillRect(-gridLeft(), -gridTop(), width, height);
+  drawingContext.restore();
+}
+
+// What the background is filled with on `context` (a 2D canvas): the
+// Background color, or the gradient from Background to Background 2. The
+// gradient is measured in grid pixels from the grid's top left corner, so
+// `context` has to be moved there first.
+function backgroundFill(context) {
   const geometry = gradientGeometry();
-  if (!geometry) return;
-  const left = gridLeft();
-  const top = gridTop();
+  if (!geometry) return svgColor(uiParams.backgroundColor);
   const gradient = geometry.type === 'Radial'
-    ? drawingContext.createRadialGradient(left + geometry.cx, top + geometry.cy, 0, left + geometry.cx, top + geometry.cy, geometry.r)
-    : drawingContext.createLinearGradient(left + geometry.x1, top + geometry.y1, left + geometry.x2, top + geometry.y2);
+    ? context.createRadialGradient(geometry.cx, geometry.cy, 0, geometry.cx, geometry.cy, geometry.r)
+    : context.createLinearGradient(geometry.x1, geometry.y1, geometry.x2, geometry.y2);
   gradient.addColorStop(0, svgColor(uiParams.backgroundColor));
   gradient.addColorStop(1, svgColor(uiParams.backgroundEndColor));
-  drawingContext.save();
-  drawingContext.fillStyle = gradient;
-  drawingContext.fillRect(0, 0, width, height);
-  drawingContext.restore();
+  return gradient;
+}
+
+// Paints the background onto a picture of the saved square (see
+// savedSquare()) that is `pixelSize` pixels wide and tall: the saved
+// picture and every video frame. The drawing is copied on top from the
+// canvas; where the square reaches past the canvas, this is what shows.
+function paintSavedBackground(context, pixelSize) {
+  const { corner, size } = savedSquare();
+  context.save();
+  context.scale(pixelSize / size, pixelSize / size);
+  context.translate(-corner, -corner);
+  context.fillStyle = backgroundFill(context);
+  context.fillRect(corner, corner, size, size);
+  context.restore();
 }
 
 // A gradient for an SVG file, from startColor to endColor, named `id` so
@@ -1938,13 +1966,13 @@ function svgGradient(id, startColor, endColor, geometry) {
   return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${rounded(x1)}" y1="${rounded(y1)}" x2="${rounded(x2)}" y2="${rounded(y2)}">${stops}</linearGradient>`;
 }
 
-// An SVG file's background, from `left` across `fileWidth`: one rectangle
-// marked class="background" (the library leaves it out when exporting
-// without background). With a gradient, the gradient goes on the line
-// before it.
-function backgroundSVG(left, fileWidth) {
+// An SVG file's background, a square `fileSize` wide and tall with its top
+// left corner at `corner`, `corner`: one rectangle marked
+// class="background" (the library leaves it out when exporting without
+// background). With a gradient, the gradient goes on the line before it.
+function backgroundSVG(corner, fileSize) {
   const geometry = gradientGeometry();
-  const place = `x="${left}" width="${fileWidth}" height="${gridSize}"`;
+  const place = `x="${corner}" y="${corner}" width="${fileSize}" height="${fileSize}"`;
   if (!geometry) return [`<rect class="background" ${place} fill="${svgColor(uiParams.backgroundColor)}"/>`];
   return [
     `<defs>${svgGradient('background-gradient', uiParams.backgroundColor, uiParams.backgroundEndColor, geometry)}</defs>`,
@@ -1975,13 +2003,12 @@ function drawingSVG({ withBackground = true } = {}) {
   return svgFile(shapes, { withBackground });
 }
 
-// The beginning and end of an SVG file the size of the drawing, around
-// `shapes`. The shapes are leaned like the grid on screen (skewX leans the
-// other way round than the Slant slider, like shearX). A slanted grid
-// reaches past its square on both sides, so the file is that much wider.
-// `withBackground` fills the whole file with the background first (see
-// backgroundSVG()); without it, the file is see-through, like the grid
-// and anchors files.
+// The beginning and end of an SVG file the size of the saved square (see
+// savedSquare()), around `shapes`. The shapes are leaned like the grid on
+// screen (skewX leans the other way round than the Slant slider, like
+// shearX). `withBackground` fills the whole file with the background
+// first (see backgroundSVG()); without it, the file is see-through, like
+// the grid and anchors files.
 function svgFile(shapes, { withBackground = false } = {}) {
   const overhang = round(slantOverhang(), SVG_DECIMALS);
   const fileWidth = round(gridSize + overhang * 2, SVG_DECIMALS);
@@ -2253,6 +2280,17 @@ function slantShift() {
 // How far the slanted grid reaches past the grid's square on each side.
 function slantOverhang() {
   return Math.abs(slantShift()) * gridSize / 2;
+}
+
+// The square every saved iteration is cut to: its picture, its SVG files
+// and its video. It is as wide as the slanted grid reaches, and just as
+// tall, so the drawing sits in the middle with room above and below, plus
+// SAVED_MARGIN all around, so the grid doesn't touch the edges. Its top
+// left corner is `corner` grid pixels up and left of the grid's own (a
+// negative number), and it is `size` grid pixels wide and tall.
+function savedSquare() {
+  const room = slantOverhang() + gridSize * SAVED_MARGIN;
+  return { corner: -room, size: gridSize + room * 2 };
 }
 
 // Leans everything drawn after it, around the middle of the grid, so the
@@ -2729,9 +2767,9 @@ function currentSheet() {
 // Multiple view: one SVG file for the whole sheet. `makeFile` makes one
 // iteration's file (drawingSVG, gridSVG or anchorsSVG); each one is placed
 // in its spot, shrunk to fit: its width and height (the first line) are
-// swapped for its position and size on the sheet. The sheet is as wide as
-// the sheet's picture, slant overhang included, so the drawing and the
-// guides line up in the library's preview. `withBackground` puts one
+// swapped for its position and size on the sheet. The sheet is the saved
+// square (see savedSquare()), like the sheet's picture, so the drawing and
+// the guides line up in the library's preview. `withBackground` puts one
 // background behind the whole sheet, like on screen (see backgroundSVG());
 // the iterations' own files then come without one.
 function sheetFile(makeFile, { withBackground = false } = {}) {
@@ -2741,13 +2779,15 @@ function sheetFile(makeFile, { withBackground = false } = {}) {
   const shapes = withBackground ? backgroundSVG(-overhang, fileWidth) : [];
   iterations.forEach((iteration, index) => {
     withIteration(iteration, () => {
-      const { x, y, size, scaleFactor } = iterationPlace(index);
+      const { x, y, scaleFactor } = iterationPlace(index);
       const file = makeFile({ withBackground: false });
-      // a slanted file is wider than its grid by the overhang on each side,
-      // which sticks out of the iteration's spot, like on the canvas
-      const left = round(x - slantOverhang() * scaleFactor, SVG_DECIMALS);
-      const placedWidth = round((gridSize + slantOverhang() * 2) * scaleFactor, SVG_DECIMALS);
-      const place = `x="${left}" y="${round(y, SVG_DECIMALS)}" width="${placedWidth}" height="${round(size, SVG_DECIMALS)}"`;
+      // each iteration's file is its own saved square, which reaches past
+      // the iteration's spot when the grid is slanted, like on the canvas
+      const square = savedSquare();
+      const left = round(x + square.corner * scaleFactor, SVG_DECIMALS);
+      const top = round(y + square.corner * scaleFactor, SVG_DECIMALS);
+      const placedSize = round(square.size * scaleFactor, SVG_DECIMALS);
+      const place = `x="${left}" y="${top}" width="${placedSize}" height="${placedSize}"`;
       file[0] = file[0].replace(/width="[^"]*" height="[^"]*"/, place);
       shapes.push(...file);
     });
@@ -3096,25 +3136,28 @@ function pictureToInk(inkPicture, target = ink) {
 }
 
 // The picture the library shows and exports as PNG, as a data URL. It is
-// cut out of the canvas where the grid is, at the canvas's full sharpness.
-// pixelDensity() is at least INK_SCALE (see setup()): the canvas then has
-// that many times as many pixels as it looks, so the picture is that many
-// times the grid's size, as detailed as the ink.
-// A slanted grid reaches past its square on both sides, so the picture is
-// that much wider.
+// the saved square (see savedSquare()) cut out of the canvas, at the
+// canvas's full sharpness. pixelDensity() is at least INK_SCALE (see
+// setup()): the canvas then has that many times as many pixels as it
+// looks, so the picture is that many times the square's size, as detailed
+// as the ink. The background is painted first, for where the square
+// reaches past the canvas.
 function drawingPicture() {
   const density = pixelDensity();
-  const overhang = slantOverhang();
-  const pictureWidth = Math.round((gridSize + overhang * 2) * density);
-  const pictureHeight = gridSize * density;
+  const { corner, size } = savedSquare();
+  const pictureSize = Math.round(size * density);
   const picture = document.createElement('canvas');
-  picture.width = pictureWidth;
-  picture.height = pictureHeight;
-  picture.getContext('2d').drawImage(
-    drawingContext.canvas,
-    (gridLeft() - overhang) * density, gridTop() * density, pictureWidth, pictureHeight,
-    0, 0, pictureWidth, pictureHeight,
-  );
+  picture.width = pictureSize;
+  picture.height = pictureSize;
+  const context = picture.getContext('2d');
+  paintSavedBackground(context, pictureSize);
+  const region = {
+    left: (gridLeft() + corner) * density,
+    top: (gridTop() + corner) * density,
+    width: pictureSize,
+    height: pictureSize,
+  };
+  copyRegion(context, drawingContext.canvas, region, pictureSize, pictureSize);
   return picture.toDataURL('image/png');
 }
 
@@ -3642,11 +3685,10 @@ function updateStageFrame() {
 
   const perRow = uiParams.iterationsPerRow;
   showText(labels['top-left'], isMultipleView() ? `Iterations ${perRow} × ${perRow}` : 'Iteration canvas');
-  // the PNG resolution picked in the library's preview. A slanted grid
-  // makes the picture wider by its overhang on both sides, like the PNG.
-  const pictureHeight = library.resolution();
-  const pictureWidth = Math.round((pictureHeight * (gridSize + slantOverhang() * 2)) / gridSize);
-  showText(labels['top-right'], `${pictureWidth} × ${pictureHeight}`);
+  // the PNG resolution picked in the library's preview; the PNG is
+  // always square (see savedSquare())
+  const pictureSize = library.resolution();
+  showText(labels['top-right'], `${pictureSize} × ${pictureSize}`);
   showText(labels['bottom-left'], `Grid ${uiParams.columns} × ${uiParams.rows}`);
   showText(labels['bottom-right'], `${anchors.length} anchors${animationPaused ? ' · paused' : ''}`);
 }
